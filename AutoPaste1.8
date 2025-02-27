@@ -1,0 +1,670 @@
+import tkinter as tk
+from tkinter import messagebox, ttk
+from PIL import Image, ImageGrab, ImageTk
+import os
+import time
+import win32com.client
+import sys
+
+PASTA_FOTOS = os.path.join(os.path.dirname(sys.executable), "fotos_copiadas")
+
+ultimo_texto_processado = ""
+historico_lojas = []
+ultima_foto_salva = None
+
+def criar_pasta_fotos():
+    if not os.path.exists(PASTA_FOTOS):
+        os.makedirs(PASTA_FOTOS)
+        print(f"Pasta criada: {PASTA_FOTOS}")
+    else:
+        print(f"Pasta já existe: {PASTA_FOTOS}")
+    limpar_pasta_fotos()
+
+def limpar_pasta_fotos():
+    for arquivo in os.listdir(PASTA_FOTOS):
+        caminho_arquivo = os.path.join(PASTA_FOTOS, arquivo)
+        try:
+            if os.path.isfile(caminho_arquivo):
+                os.remove(caminho_arquivo)
+                print(f"Arquivo {caminho_arquivo} removido na inicialização.")
+        except Exception as e:
+            print(f"Erro ao remover {caminho_arquivo}: {e}")
+    print(f"Pasta {PASTA_FOTOS} limpa na inicialização. Fotos restantes: {len(os.listdir(PASTA_FOTOS))}.")
+
+FATOR_ESCALA = 96 / 3.50
+FORMATACOES = {
+    1: [{"left": 2.12, "top": 3.27, "width": 17.07, "height": 13.04}],
+    2: [
+        {"left": 0.17, "top": 2.73, "width": 10.02, "height": 13.85},
+        {"left": 11.18, "top": 2.73, "width": 10.02, "height": 13.85},
+    ],
+    3: [
+        {"left": 0.17, "top": 2.73, "width": 8.89, "height": 6.79},
+        {"left": 9.82, "top": 2.73, "width": 8.89, "height": 6.79},
+        {"left": 4.66, "top": 10.06, "width": 9.95, "height": 6.79},
+    ],
+    4: [
+        {"left": 0.17, "top": 2.73, "width": 8.89, "height": 6.79},
+        {"left": 9.82, "top": 2.73, "width": 8.89, "height": 6.79},
+        {"left": 0.20, "top": 9.78, "width": 8.87, "height": 6.79},
+        {"left": 9.82, "top": 9.78, "width": 8.89, "height": 6.67},
+    ],
+    5: [
+        {"left": 0.14, "top": 2.61, "width": 7.27, "height": 5.29},
+        {"left": 7.79, "top": 2.82, "width": 7.26, "height": 5.29},
+        {"left": 15.63, "top": 2.63, "width": 7.87, "height": 5.29},
+        {"left": 1.27, "top": 8.47, "width": 9.56, "height": 9.86},
+        {"left": 12.2, "top": 8.51, "width": 9.56, "height": 9.86},
+    ],
+    6: [
+        {"left": 0.11, "top": 2.98, "width": 7.96, "height": 5.77}, 
+        {"left": 8.18, "top": 3.01, "width": 7.96, "height": 5.77},
+        {"left": 16.22, "top": 3.08, "width": 7.87, "height": 5.43},
+        {"left": 0.2, "top": 9.63, "width": 7.87, "height": 6.05},
+        {"left": 8.18, "top": 9.63, "width": 7.87, "height": 6.05},
+        {"left": 16.14, "top": 9.63, "width": 7.87, "height": 6.05},
+    ],
+}
+
+def cm_para_pixels(cm):
+    return int(cm * FATOR_ESCALA)
+
+def colar_fotos_com_formatacao(slide, fotos, formatacao):
+    fotos_existentes = [f for f in os.listdir(PASTA_FOTOS) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+    print(f"Fotos encontradas na pasta antes de colar: {len(fotos_existentes)} ({fotos_existentes})")
+    
+    for i, (foto, coord) in enumerate(zip(fotos, formatacao)):
+        caminho_foto = os.path.join(PASTA_FOTOS, foto)
+        try:
+            if not os.path.exists(caminho_foto):
+                print(f"Erro: O arquivo {caminho_foto} não existe.")
+                continue
+
+            imagem = Image.open(caminho_foto)
+            nova_largura = int(imagem.width * 0.5)
+            nova_altura = int(imagem.height * 0.5)
+            imagem = imagem.resize((nova_largura, nova_altura), Image.Resampling.LANCZOS)
+            caminho_foto_comprimida = os.path.join(PASTA_FOTOS, f"compressed_{foto}")
+            imagem.save(caminho_foto_comprimida, quality=50)
+
+            left = cm_para_pixels(coord["left"])
+            top = cm_para_pixels(coord["top"])
+            width = cm_para_pixels(coord["width"])
+            height = cm_para_pixels(coord["height"])
+
+            print(f"Tentando colar a foto: {caminho_foto_comprimida}")
+            shape = slide.Shapes.AddPicture(
+                caminho_foto_comprimida,
+                LinkToFile=False,
+                SaveWithDocument=True,
+                Left=left,
+                Top=top,
+                Width=width,
+                Height=height,
+            )
+
+            if shape:
+                print(f"Foto {i + 1} colada com sucesso: Left = {left}px, Top = {top}px, Width = {width}px, Height = {height}px")
+                os.remove(caminho_foto)
+                os.remove(caminho_foto_comprimida)
+                print(f"Fotos {caminho_foto} e {caminho_foto_comprimida} apagadas.")
+            else:
+                print(f"Erro: A foto {foto} não foi colada (shape é None).")
+        except Exception as e:
+            print(f"Erro ao colar a foto {foto}: {e}")
+            continue
+
+def inserir_texto_no_powerpoint(slide, textos):
+    try:
+        for shape in slide.Shapes:
+            if shape.HasTextFrame:
+                texto_shape = shape.TextFrame.TextRange.Text.strip()
+                for campo, valor in textos.items():
+                    if texto_shape.startswith(campo + ":"):
+                        posicao_inicio = len(campo) + 1
+                        texto_original = shape.TextFrame.TextRange.Text
+                        parte_antes = texto_original[:posicao_inicio]
+                        if valor.strip():
+                            novo_texto = parte_antes + " " + valor
+                            shape.TextFrame.TextRange.Text = novo_texto
+                            print(f"Texto '{campo}' atualizado: {novo_texto}")
+    except Exception as e:
+        print(f"Erro ao inserir texto no PowerPoint: {e}")
+
+def apagar_elementos_powerpoint(opcao):
+    try:
+        powerpoint = win32com.client.Dispatch("PowerPoint.Application")
+        if not powerpoint.Presentations.Count:
+            messagebox.showinfo("Aviso", "Nenhuma apresentação do PowerPoint está aberta.")
+            return
+
+        apresentacao = powerpoint.ActivePresentation
+        slide_atual = apresentacao.Slides(powerpoint.ActiveWindow.Selection.SlideRange.SlideIndex)
+
+        campos_esperados = ["FORNECEDOR", "PROMOTOR", "REDE", "LOJA", "ANALISTA", "ESTADO", "CIDADE", "DATA", "HORA"]
+        fotos_apagadas = 0
+        textos_apagados = 0
+
+        shapes = [shape for shape in slide_atual.Shapes]
+
+        for shape in shapes:
+            if (opcao == "Fotos" or opcao == "Fotos e Textos") and shape.Type == 13:
+                shape.Delete()
+                fotos_apagadas += 1
+                print(f"Foto apagada do slide atual.")
+            if (opcao == "Textos" or opcao == "Fotos e Textos") and shape.HasTextFrame:
+                texto = shape.TextFrame.TextRange.Text.strip()
+                for campo in campos_esperados:
+                    if texto.startswith(campo + ":"):
+                        shape.TextFrame.TextRange.Text = campo + ":"
+                        textos_apagados += 1
+                        print(f"Texto após '{campo}:' apagado.")
+
+        if fotos_apagadas > 0 or textos_apagados > 0:
+            messagebox.showinfo("Sucesso", f"Elementos apagados: {fotos_apagadas} fotos, {textos_apagados} textos.")
+        else:
+            messagebox.showinfo("Aviso", "Nenhum elemento correspondente encontrado no slide atual.")
+    except Exception as e:
+        messagebox.showerror("Erro", f"Ocorreu um erro ao apagar elementos: {e}")
+        print(f"Erro detalhado: {e}")
+
+def abrir_menu_apagar():
+    janela_opcao = tk.Toplevel(janela)
+    janela_opcao.title("Escolha o que apagar")
+    janela_opcao.geometry("250x150")
+    janela_opcao.transient(janela)
+    janela_opcao.grab_set()
+
+    tk.Label(janela_opcao, text="O que deseja apagar?").pack(pady=10)
+    tk.Button(janela_opcao, text="Apenas Fotos", command=lambda: [apagar_elementos_powerpoint("Fotos"), janela_opcao.destroy()]).pack(pady=5)
+    tk.Button(janela_opcao, text="Apenas Textos", command=lambda: [apagar_elementos_powerpoint("Textos"), janela_opcao.destroy()]).pack(pady=5)
+    tk.Button(janela_opcao, text="Fotos e Textos", command=lambda: [apagar_elementos_powerpoint("Fotos e Textos"), janela_opcao.destroy()]).pack(pady=5)
+
+def inserir_apenas_texto_no_powerpoint():
+    try:
+        powerpoint = win32com.client.Dispatch("PowerPoint.Application")
+        if not powerpoint.Presentations.Count:
+            messagebox.showinfo("Aviso", "Nenhuma apresentação do PowerPoint está aberta.")
+            return
+
+        apresentacao = powerpoint.ActivePresentation
+        slide_atual = apresentacao.Slides(powerpoint.ActiveWindow.Selection.SlideRange.SlideIndex)
+
+        textos = {
+            "FORNECEDOR": entrada_fornecedor.get(),
+            "PROMOTOR": entrada_promotor.get(),
+            "REDE": entrada_rede.get(),
+            "LOJA": entrada_loja.get(),
+            "ANALISTA": entrada_analista.get(),
+            "ESTADO": entrada_estado.get(),
+            "CIDADE": entrada_cidade.get(),
+            "DATA": entrada_data.get(),
+            "HORA": entrada_hora.get(),
+        }
+
+        inserir_texto_no_powerpoint(slide_atual, {k: v for k, v in textos.items() if v.strip()})
+        limpar_apenas_textos()
+        limpar_historico()
+
+        messagebox.showinfo("Sucesso", "Textos inseridos/atualizados no slide atual!")
+        print("Textos inseridos manualmente no PowerPoint.")
+    except Exception as e:
+        messagebox.showerror("Erro", f"Ocorreu um erro ao inserir os textos: {e}")
+        print(f"Erro detalhado: {e}")
+
+def limpar_apenas_textos():
+    global ultimo_texto_processado
+    entrada_fornecedor.delete(0, tk.END)
+    entrada_promotor.delete(0, tk.END)
+    entrada_rede.delete(0, tk.END)
+    entrada_loja.delete(0, tk.END)
+    entrada_analista.delete(0, tk.END)
+    entrada_estado.delete(0, tk.END)
+    entrada_cidade.delete(0, tk.END)
+    entrada_data.delete(0, tk.END)
+    entrada_hora.delete(0, tk.END)
+    ultimo_texto_processado = ""
+    print("Campos de texto limpos.")
+
+def limpar_apenas_imagens():
+    limpar_historico()
+    for arquivo in os.listdir(PASTA_FOTOS):
+        caminho_arquivo = os.path.join(PASTA_FOTOS, arquivo)
+        try:
+            if os.path.isfile(caminho_arquivo):
+                os.remove(caminho_arquivo)
+                print(f"Arquivo {caminho_arquivo} removido.")
+        except Exception as e:
+            print(f"Erro ao remover {caminho_arquivo}: {e}")
+    print(f"Pasta {PASTA_FOTOS} limpa. Fotos restantes: {len(os.listdir(PASTA_FOTOS))}.")
+
+def extrair_e_preencher_textos():
+    global ultimo_texto_processado
+    try:
+        texto = janela.clipboard_get()
+        if not texto or texto == ultimo_texto_processado:
+            return
+
+        ultimo_texto_processado = texto
+
+        campos_esperados = ["FORNECEDOR", "PROMOTOR", "REDE", "LOJA", "ANALISTA", "ESTADO", "CIDADE", "DATA", "HORA"]
+        textos_extraidos = {}
+
+        linhas = texto.splitlines()
+        if len(linhas) != len(campos_esperados):
+            print(f"Texto ignorado: número de linhas ({len(linhas)}) não corresponde aos campos esperados ({len(campos_esperados)}).")
+            return
+
+        for i, linha in enumerate(linhas):
+            if ":" in linha:
+                campo, valor = linha.split(":", 1)
+                campo = campo.strip().upper()
+                valor = valor.strip()
+                if campo != campos_esperados[i]:
+                    print(f"Texto ignorado: campo '{campo}' na posição {i} não corresponde ao esperado '{campos_esperados[i]}'.")
+                    return
+                textos_extraidos[campo] = valor
+            else:
+                print(f"Texto ignorado: linha '{linha}' não contém ':'.")
+                return
+
+        if "FORNECEDOR" in textos_extraidos:
+            entrada_fornecedor.delete(0, tk.END)
+            entrada_fornecedor.insert(0, textos_extraidos["FORNECEDOR"])
+        if "PROMOTOR" in textos_extraidos:
+            entrada_promotor.delete(0, tk.END)
+            entrada_promotor.insert(0, textos_extraidos["PROMOTOR"])
+        if "REDE" in textos_extraidos:
+            entrada_rede.delete(0, tk.END)
+            entrada_rede.insert(0, textos_extraidos["REDE"])
+        if "LOJA" in textos_extraidos:
+            entrada_loja.delete(0, tk.END)
+            entrada_loja.insert(0, textos_extraidos["LOJA"])
+            if textos_extraidos["LOJA"] not in historico_lojas:
+                historico_lojas.append(textos_extraidos["LOJA"])
+                atualizar_historico_lojas()
+        if "ANALISTA" in textos_extraidos:
+            entrada_analista.delete(0, tk.END)
+            entrada_analista.insert(0, textos_extraidos["ANALISTA"])
+        if "ESTADO" in textos_extraidos:
+            entrada_estado.delete(0, tk.END)
+            entrada_estado.insert(0, textos_extraidos["ESTADO"])
+        if "CIDADE" in textos_extraidos:
+            entrada_cidade.delete(0, tk.END)
+            entrada_cidade.insert(0, textos_extraidos["CIDADE"])
+        if "DATA" in textos_extraidos:
+            entrada_data.delete(0, tk.END)
+            entrada_data.insert(0, textos_extraidos["DATA"])
+        if "HORA" in textos_extraidos:
+            entrada_hora.delete(0, tk.END)
+            entrada_hora.insert(0, textos_extraidos["HORA"])
+
+        print("Textos extraídos e preenchidos automaticamente!")
+        janela.clipboard_clear()
+    except tk.TclError:
+        pass
+    except Exception as e:
+        print(f"Erro ao extrair e preencher textos: {e}")
+
+def ruptura_total():
+    try:
+        powerpoint = win32com.client.Dispatch("PowerPoint.Application")
+        if not powerpoint.Presentations.Count:
+            messagebox.showinfo("Aviso", "Nenhuma apresentação do PowerPoint está aberta.")
+            return
+
+        apresentacao = powerpoint.ActivePresentation
+        slide_atual = apresentacao.Slides(powerpoint.ActiveWindow.Selection.SlideRange.SlideIndex)
+
+        formatacao = FORMATACOES[1][0]
+        left = cm_para_pixels(formatacao["left"])
+        top = cm_para_pixels(formatacao["top"])
+        width = cm_para_pixels(formatacao["width"])
+        height = cm_para_pixels(formatacao["height"])
+
+        shape = slide_atual.Shapes.AddTextbox(Orientation=1, Left=left, Top=top, Width=width, Height=height)
+        shape.TextFrame.TextRange.Text = "RUPTURA TOTAL"
+        shape.TextFrame.TextRange.Font.Size = 46
+        shape.TextFrame.TextRange.Font.Bold = True
+        shape.TextFrame.TextRange.Font.Name = "Arial"
+        shape.TextFrame.TextRange.ParagraphFormat.Alignment = 2
+
+        messagebox.showinfo("Sucesso", "RUPTURA TOTAL inserido no slide atual!")
+    except Exception as e:
+        messagebox.showerror("Erro", f"Ocorreu um erro ao inserir RUPTURA TOTAL: {e}")
+        print(f"Erro detalhado: {e}")
+
+def colar_fotos_no_powerpoint():
+    fotos = [f for f in os.listdir(PASTA_FOTOS) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+    print(f"Total de fotos detectadas para colar: {len(fotos)} ({fotos})")
+    if not fotos:
+        print("Nenhuma foto encontrada para colar.")
+        return
+
+    try:
+        powerpoint = win32com.client.Dispatch("PowerPoint.Application")
+        if not powerpoint.Presentations.Count:
+            messagebox.showinfo("Aviso", "Nenhuma apresentação do PowerPoint está aberta.")
+            return
+
+        apresentacao = powerpoint.ActivePresentation
+        slide_atual = apresentacao.Slides(powerpoint.ActiveWindow.Selection.SlideRange.SlideIndex)
+
+        num_fotos = len(fotos)
+        if num_fotos in FORMATACOES:
+            print(f"Colando {num_fotos} foto(s) no slide atual...")
+            colar_fotos_com_formatacao(slide_atual, fotos, FORMATACOES[num_fotos])
+
+            textos = {
+                "FORNECEDOR": entrada_fornecedor.get(),
+                "PROMOTOR": entrada_promotor.get(),
+                "REDE": entrada_rede.get(),
+                "LOJA": entrada_loja.get(),
+                "ANALISTA": entrada_analista.get(),
+                "ESTADO": entrada_estado.get(),
+                "CIDADE": entrada_cidade.get(),
+                "DATA": entrada_data.get(),
+                "HORA": entrada_hora.get(),
+            }
+
+            inserir_texto_no_powerpoint(slide_atual, textos)
+
+            limpar_apenas_textos()
+            limpar_apenas_imagens()
+            limpar_historico()
+
+            messagebox.showinfo("Sucesso", "Fotos e textos colados no PowerPoint!")
+        else:
+            messagebox.showwarning("Aviso", f"Não há formatação definida para {num_fotos} fotos.")
+    except Exception as e:
+        messagebox.showerror("Erro", f"Ocorreu um erro ao colar as fotos: {e}")
+        print(f"Erro detalhado: {e}")
+
+def limpar_historico():
+    for widget in frame_imagens.winfo_children():
+        widget.destroy()
+    print("Histórico de fotos limpo.")
+
+def verificar_area_de_transferencia():
+    try:
+        imagem = ImageGrab.grabclipboard()
+        if isinstance(imagem, Image.Image):
+            return imagem
+    except Exception as e:
+        print(f"Erro ao acessar a área de transferência: {e}")
+    return None
+
+def salvar_e_exibir_imagem():
+    global ultima_foto_salva
+    imagem = verificar_area_de_transferencia()
+    if imagem:
+        imagem_hash = hash(imagem.tobytes())
+        if ultima_foto_salva == imagem_hash:
+            print("Imagem já salva anteriormente, ignorando.")
+            return
+        
+        nome_arquivo = f"foto_{int(time.time())}.png"
+        caminho_arquivo = os.path.join(PASTA_FOTOS, nome_arquivo)
+        imagem.save(caminho_arquivo)
+        exibir_imagem_na_interface(caminho_arquivo)
+        ultima_foto_salva = imagem_hash
+        limpar_area_de_transferencia()
+        print(f"Imagem salva: {caminho_arquivo}")
+
+def exibir_imagem_na_interface(caminho_arquivo):
+    imagem = Image.open(caminho_arquivo)
+    imagem.thumbnail((100, 100))
+    imagem_tk = ImageTk.PhotoImage(imagem)
+    label_imagem = tk.Label(frame_imagens, image=imagem_tk)
+    label_imagem.image = imagem_tk
+    label_imagem.pack(side=tk.LEFT, padx=5, pady=5)
+
+def limpar_area_de_transferencia():
+    try:
+        janela.clipboard_clear()
+        janela.clipboard_append("")
+        print("Área de transferência limpa.")
+    except Exception as e:
+        print(f"Erro ao limpar a área de transferência: {e}")
+
+def atualizar_historico_lojas():
+    historico_texto = "\n".join(historico_lojas)
+    label_historico.config(text=f"{TRADUCOES[idioma_atual]['lojas_processadas']}\n{historico_texto}")
+
+def verificar_periodicamente():
+    salvar_e_exibir_imagem()
+    extrair_e_preencher_textos()
+    janela.after(1000, verificar_periodicamente)
+
+# Variáveis para temas e idiomas
+tema_atual = "claro"
+idioma_atual = "pt-br"
+
+# Dicionário de traduções atualizado com os rótulos dos campos
+TRADUCOES = {
+    "pt-br": {
+        "titulo": "Sistema de Book",
+        "colar_fotos": "Colar Fotos e Textos",
+        "inserir_texto": "Inserir Apenas Textos",
+        "ruptura_total": "RUPTURA TOTAL",
+        "apagar_ppt": "Apagar do PPT",
+        "lojas_processadas": "Lojas já processadas:",
+        "configuracoes": "Configurações",
+        "tema_claro": "Tema Claro",
+        "tema_escuro": "Tema Escuro",
+        "idioma": "Idioma",
+        "portugues": "Português (BR)",
+        "espanhol": "Espanhol",
+        "ingles": "Inglês",
+        "fornecedor": "FORNECEDOR:",
+        "promotor": "PROMOTOR:",
+        "rede": "REDE:",
+        "loja": "LOJA:",
+        "analista": "ANALISTA:",
+        "estado": "ESTADO:",
+        "cidade": "CIDADE:",
+        "data": "DATA:",
+        "hora": "HORA:"
+    },
+    "es": {
+        "titulo": "Sistema de Book",
+        "colar_fotos": "Pegar Fotos y Textos",
+        "inserir_texto": "Insertar Solo Textos",
+        "ruptura_total": "RUPTURA TOTAL",
+        "apagar_ppt": "Borrar del PPT",
+        "lojas_processadas": "Tiendas ya procesadas:",
+        "configuracoes": "Configuraciones",
+        "tema_claro": "Tema Claro",
+        "tema_escuro": "Tema Oscuro",
+        "idioma": "Idioma",
+        "portugues": "Portugués (BR)",
+        "espanhol": "Español",
+        "ingles": "Inglés",
+        "fornecedor": "PROVEEDOR:",
+        "promotor": "PROMOTOR:",
+        "rede": "RED:",
+        "loja": "TIENDA:",
+        "analista": "ANALISTA:",
+        "estado": "ESTADO:",
+        "cidade": "CIUDAD:",
+        "data": "FECHA:",
+        "hora": "HORA:"
+    },
+    "en": {
+        "titulo": "Book System",
+        "colar_fotos": "Paste Photos and Texts",
+        "inserir_texto": "Insert Only Texts",
+        "ruptura_total": "TOTAL RUPTURE",
+        "apagar_ppt": "Delete from PPT",
+        "lojas_processadas": "Processed Stores:",
+        "configuracoes": "Settings",
+        "tema_claro": "Light Theme",
+        "tema_escuro": "Dark Theme",
+        "idioma": "Language",
+        "portugues": "Portuguese (BR)",
+        "espanhol": "Spanish",
+        "ingles": "English",
+        "fornecedor": "SUPPLIER:",
+        "promotor": "PROMOTER:",
+        "rede": "NETWORK:",
+        "loja": "STORE:",
+        "analista": "ANALYST:",
+        "estado": "STATE:",
+        "cidade": "CITY:",
+        "data": "DATE:",
+        "hora": "TIME:"
+    }
+}
+
+# Funções para temas
+def aplicar_tema():
+    if tema_atual == "claro":
+        janela.configure(bg="#f0f0f0")
+        main_frame.configure(bg="#f0f0f0")
+        frame_textos.configure(bg="#f0f0f0")
+        frame_imagens.configure(bg="#f0f0f0")
+        frame_botoes.configure(bg="#f0f0f0")
+        frame_botoes_limpeza.configure(bg="#f0f0f0")
+        frame_config.configure(bg="#f0f0f0")
+        botao_config.configure(bg="#f0f0f0", fg="black")
+        for widget in frame_textos.winfo_children():
+            if isinstance(widget, tk.Label):
+                widget.configure(bg="#f0f0f0", fg="black")
+            elif isinstance(widget, tk.Entry):
+                widget.configure(bg="white", fg="black")
+        label_historico.configure(bg="#f0f0f0", fg="black")
+    elif tema_atual == "escuro":
+        janela.configure(bg="#2e2e2e")
+        main_frame.configure(bg="#2e2e2e")
+        frame_textos.configure(bg="#2e2e2e")
+        frame_imagens.configure(bg="#2e2e2e")
+        frame_botoes.configure(bg="#2e2e2e")
+        frame_botoes_limpeza.configure(bg="#2e2e2e")
+        frame_config.configure(bg="#2e2e2e")
+        botao_config.configure(bg="#2e2e2e", fg="white")
+        for widget in frame_textos.winfo_children():
+            if isinstance(widget, tk.Label):
+                widget.configure(bg="#2e2e2e", fg="white")
+            elif isinstance(widget, tk.Entry):
+                widget.configure(bg="#404040", fg="white")
+        label_historico.configure(bg="#2e2e2e", fg="white")
+
+def mudar_tema(novo_tema):
+    global tema_atual
+    tema_atual = novo_tema
+    aplicar_tema()
+
+# Função para mudar idioma
+def mudar_idioma(novo_idioma):
+    global idioma_atual
+    idioma_atual = novo_idioma
+    atualizar_textos_interface()
+
+def atualizar_textos_interface():
+    janela.title(TRADUCOES[idioma_atual]["titulo"])
+    botao_colar_fotos.config(text=TRADUCOES[idioma_atual]["colar_fotos"])
+    botao_inserir_texto.config(text=TRADUCOES[idioma_atual]["inserir_texto"])
+    botao_ruptura_total.config(text=TRADUCOES[idioma_atual]["ruptura_total"])
+    botao_apagar.config(text=TRADUCOES[idioma_atual]["apagar_ppt"])
+    atualizar_historico_lojas()
+    # Atualizar os rótulos dos campos
+    for i, campo in enumerate(["fornecedor", "promotor", "rede", "loja", "analista", "estado", "cidade", "data", "hora"]):
+        frame_textos.grid_slaves(row=i, column=0)[0].config(text=TRADUCOES[idioma_atual][campo])
+
+# Interface gráfica
+janela = tk.Tk()
+janela.title(TRADUCOES[idioma_atual]["titulo"])
+janela.attributes('-topmost', True)
+janela.geometry("400x600")
+
+# Adicionando o botão de configurações
+frame_config = tk.Frame(janela, bg="#f0f0f0")
+frame_config.pack(side=tk.TOP, fill=tk.X)
+
+botao_config = tk.Button(frame_config, text="⚙️", font=("Arial", 12), command=lambda: menu_config.post(botao_config.winfo_rootx(), botao_config.winfo_rooty() + botao_config.winfo_height()), bg="#f0f0f0", relief="flat")
+botao_config.pack(side=tk.RIGHT, padx=5, pady=5)
+
+# Criando o menu de configurações
+menu_config = tk.Menu(janela, tearoff=0)
+menu_tema = tk.Menu(menu_config, tearoff=0)
+menu_idioma = tk.Menu(menu_config, tearoff=0)
+
+menu_config.add_cascade(label=TRADUCOES[idioma_atual]["configuracoes"], menu=menu_tema)
+menu_tema.add_command(label=TRADUCOES[idioma_atual]["tema_claro"], command=lambda: mudar_tema("claro"))
+menu_tema.add_command(label=TRADUCOES[idioma_atual]["tema_escuro"], command=lambda: mudar_tema("escuro"))
+
+menu_config.add_cascade(label=TRADUCOES[idioma_atual]["idioma"], menu=menu_idioma)
+menu_idioma.add_command(label=TRADUCOES[idioma_atual]["portugues"], command=lambda: mudar_idioma("pt-br"))
+menu_idioma.add_command(label=TRADUCOES[idioma_atual]["espanhol"], command=lambda: mudar_idioma("es"))
+menu_idioma.add_command(label=TRADUCOES[idioma_atual]["ingles"], command=lambda: mudar_idioma("en"))
+
+main_frame = tk.Frame(janela)
+main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+janela.grid_rowconfigure(0, weight=1)
+janela.grid_columnconfigure(0, weight=1)
+
+main_frame.grid_rowconfigure(0, weight=1)
+main_frame.grid_rowconfigure(1, weight=0)
+main_frame.grid_rowconfigure(2, weight=0)
+main_frame.grid_rowconfigure(3, weight=0)
+main_frame.grid_rowconfigure(4, weight=1)
+main_frame.grid_columnconfigure(0, weight=1)
+
+criar_pasta_fotos()
+
+frame_textos = tk.Frame(main_frame)
+frame_textos.grid(row=0, column=0, sticky="nsew")
+
+campos = [
+    (TRADUCOES[idioma_atual]["fornecedor"], entrada_fornecedor := tk.Entry(frame_textos)),
+    (TRADUCOES[idioma_atual]["promotor"], entrada_promotor := tk.Entry(frame_textos)),
+    (TRADUCOES[idioma_atual]["rede"], entrada_rede := tk.Entry(frame_textos)),
+    (TRADUCOES[idioma_atual]["loja"], entrada_loja := tk.Entry(frame_textos)),
+    (TRADUCOES[idioma_atual]["analista"], entrada_analista := tk.Entry(frame_textos)),
+    (TRADUCOES[idioma_atual]["estado"], entrada_estado := tk.Entry(frame_textos)),
+    (TRADUCOES[idioma_atual]["cidade"], entrada_cidade := tk.Entry(frame_textos)),
+    (TRADUCOES[idioma_atual]["data"], entrada_data := tk.Entry(frame_textos)),
+    (TRADUCOES[idioma_atual]["hora"], entrada_hora := tk.Entry(frame_textos)),
+]
+
+for i, (label_text, entry) in enumerate(campos):
+    tk.Label(frame_textos, text=label_text).grid(row=i, column=0, padx=5, pady=2, sticky="e")
+    entry.grid(row=i, column=1, padx=5, pady=2, sticky="ew")
+frame_textos.grid_columnconfigure(1, weight=1)
+
+frame_imagens = tk.Frame(main_frame)
+frame_imagens.grid(row=1, column=0, sticky="ew")
+frame_imagens.grid_columnconfigure(0, weight=1)
+
+frame_botoes = tk.Frame(main_frame)
+frame_botoes.grid(row=2, column=0, sticky="ew")
+frame_botoes.grid_columnconfigure(0, weight=1)
+frame_botoes.grid_columnconfigure(1, weight=1)
+
+botao_colar_fotos = tk.Button(frame_botoes, text=TRADUCOES[idioma_atual]["colar_fotos"], command=colar_fotos_no_powerpoint, bg="blue", fg="white")
+botao_colar_fotos.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
+
+botao_inserir_texto = tk.Button(frame_botoes, text=TRADUCOES[idioma_atual]["inserir_texto"], command=inserir_apenas_texto_no_powerpoint, bg="green", fg="white")
+botao_inserir_texto.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+
+frame_botoes_limpeza = tk.Frame(main_frame)
+frame_botoes_limpeza.grid(row=3, column=0, sticky="ew")
+frame_botoes_limpeza.grid_columnconfigure(0, weight=1)
+frame_botoes_limpeza.grid_columnconfigure(1, weight=1)
+
+botao_ruptura_total = tk.Button(frame_botoes_limpeza, text=TRADUCOES[idioma_atual]["ruptura_total"], command=ruptura_total, bg="red", fg="white")
+botao_ruptura_total.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
+
+botao_apagar = tk.Button(frame_botoes_limpeza, text=TRADUCOES[idioma_atual]["apagar_ppt"], command=abrir_menu_apagar, bg="orange", fg="white")
+botao_apagar.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+
+label_historico = tk.Label(main_frame, text=f"{TRADUCOES[idioma_atual]['lojas_processadas']}\n", justify=tk.LEFT, wraplength=350)
+label_historico.grid(row=4, column=0, padx=5, pady=5, sticky="nsew")
+
+# Aplicar tema inicial
+aplicar_tema()
+
+janela.after(1000, verificar_periodicamente)
+
+janela.mainloop()
