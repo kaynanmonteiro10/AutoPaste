@@ -1,0 +1,1200 @@
+import tkinter as tk
+from tkinter import ttk, messagebox
+from PIL import Image, ImageGrab, ImageTk
+import os
+import sys
+import time
+import win32com.client
+import threading
+import atexit
+import json
+import hashlib
+import datetime
+import socket
+
+# Constantes e Variáveis Globais
+PASTA_FOTOS = os.path.join(os.path.dirname(sys.executable), "fotos_copiadas")
+ARQUIVO_TERMOS = os.path.join(os.path.dirname(sys.executable), "termos_aceitos.txt")
+ARQUIVO_CONFIG = os.path.join(os.path.dirname(sys.executable), "config.json")
+MODELO_PPT = os.path.join(os.path.dirname(sys.executable), "modelo_book.pptx")
+ultimo_texto_processado = ""
+ultima_imagem_hash = None
+historico_lojas = []
+dados_lojas = []
+historico_undo = []
+tema_atual = "claro"
+idioma_atual = "pt-br"
+
+# Cores Originais
+CORES = {
+    "fundo_claro": "#e0ece4",
+    "fundo_escuro": "#3c3c3c",
+    "texto_claro": "#333333",
+    "texto_escuro": "#ffffff",
+    "botao_colar_fotos": "#87ceeb",
+    "botao_inserir_texto": "#98fb98",
+    "botao_ruptura_total": "#ff6347",
+    "botao_apagar": "#ffdead",
+    "botao_limpar": "#dda0dd",
+    "botao_adicionar": "#ffd700",
+    "botao_colar_tudo": "#00ced1",
+    "botao_redimensionar": "#f0e68c",
+    "botao_desfazer": "#c0c0c0",
+    "botao_ajuda": "#20b2aa",
+    "botao_hover_claro": "#add8e6",
+    "botao_hover_escuro": "#666666",
+    "marca_dagua_claro": "#666666",
+    "marca_dagua_escuro": "#aaaaaa",
+}
+
+# Termos de Uso Profissional (Português, Inglês, Espanhol)
+TERMOS_USO = {
+    "pt-br": """
+    **Termos de Uso do Sistema de Book**  
+    **Versão 1.0 - Março de 2025**  
+    **Desenvolvido por Kaynan Monteiro**  
+
+    Bem-vindo ao Sistema de Book ("Software"), uma ferramenta projetada para organizar fotos e textos em apresentações do Microsoft PowerPoint. Ao utilizar este Software, você ("Usuário") concorda com os termos e condições aqui descritos. Leia atentamente antes de prosseguir.
+
+    **1. Aceitação dos Termos**  
+    O uso do Software implica a aceitação integral e irrestrita destes Termos de Uso. Caso não concorde com qualquer disposição, o Usuário deve cessar o uso imediatamente.
+
+    **2. Licença de Uso**  
+    O Software é fornecido sob uma licença não exclusiva, intransferível e limitada para uso pessoal ou profissional pelo Usuário. É expressamente vedada a redistribuição, venda, ou modificação do Software sem autorização expressa do desenvolvedor.
+
+    **3. Finalidade do Software**  
+    O Sistema de Book destina-se exclusivamente à criação e organização de apresentações em PowerPoint, permitindo a inserção de fotos e textos em slides pré-definidos. Qualquer uso fora desta finalidade é de responsabilidade do Usuário.
+
+    **4. Propriedade Intelectual**  
+    Todos os direitos autorais, marcas e outros elementos de propriedade intelectual do Software pertencem a Kaynan Monteiro. O Usuário não adquire nenhum direito além da licença de uso aqui concedida.
+
+    **5. Responsabilidades do Usuário**  
+    O Usuário é responsável por:  
+    - Garantir que os dados inseridos (fotos, textos) não violem direitos de terceiros;  
+    - Manter backups de seus arquivos, pois o Software não se responsabiliza por perdas de dados;  
+    - Utilizar o Software em conformidade com as leis aplicáveis.
+
+    **6. Limitação de Responsabilidade**  
+    O Software é fornecido "como está", sem garantias de qualquer tipo. Kaynan Monteiro não se responsabiliza por danos diretos, indiretos, incidentais ou consequentes decorrentes do uso ou incapacidade de uso do Software.
+
+    **7. Processamento de Dados**  
+    Todos os dados processados pelo Software são manipulados localmente no dispositivo do Usuário. Não há armazenamento remoto ou transmissão de dados a terceiros.
+
+    **8. Atualizações e Suporte**  
+    Atualizações podem ser fornecidas a critério do desenvolvedor. O suporte técnico é limitado e não garantido.
+
+    **9. Rescisão**  
+    Estes Termos vigoram até que o Usuário cesse o uso do Software ou o desenvolvedor notifique sua rescisão por violação destes termos.
+
+    **10. Lei Aplicável**  
+    Estes Termos são regidos pelas leis do Brasil. Qualquer disputa será resolvida nos tribunais competentes de [inserir cidade/estado].
+
+    **Contato:** Para dúvidas, entre em contato com kaynan.monteiro@example.com.
+    """,
+
+    "en": """
+    **Terms of Use of the Book System**  
+    **Version 1.0 - March 2025**  
+    **Developed by Kaynan Monteiro**  
+
+    Welcome to the Book System ("Software"), a tool designed to organize photos and texts into Microsoft PowerPoint presentations. By using this Software, you ("User") agree to the terms and conditions outlined herein. Please read carefully before proceeding.
+
+    **1. Acceptance of Terms**  
+    Use of the Software constitutes full and unconditional acceptance of these Terms of Use. If you do not agree with any provision, the User must immediately cease use.
+
+    **2. License of Use**  
+    The Software is provided under a non-exclusive, non-transferable, and limited license for personal or professional use by the User. Redistribution, sale, or modification of the Software without express authorization from the developer is strictly prohibited.
+
+    **3. Purpose of the Software**  
+    The Book System is intended solely for creating and organizing PowerPoint presentations, allowing the insertion of photos and texts into predefined slides. Any use beyond this purpose is the User’s responsibility.
+
+    **4. Intellectual Property**  
+    All copyrights, trademarks, and other intellectual property elements of the Software belong to Kaynan Monteiro. The User acquires no rights beyond the license granted herein.
+
+    **5. User Responsibilities**  
+    The User is responsible for:  
+    - Ensuring that the data entered (photos, texts) does not infringe on third-party rights;  
+    - Maintaining backups of their files, as the Software is not liable for data loss;  
+    - Using the Software in compliance with applicable laws.
+
+    **6. Limitation of Liability**  
+    The Software is provided "as is," without warranties of any kind. Kaynan Monteiro shall not be liable for direct, indirect, incidental, or consequential damages arising from the use or inability to use the Software.
+
+    **7. Data Processing**  
+    All data processed by the Software is handled locally on the User’s device. There is no remote storage or transmission of data to third parties.
+
+    **8. Updates and Support**  
+    Updates may be provided at the developer’s discretion. Technical support is limited and not guaranteed.
+
+    **9. Termination**  
+    These Terms remain in effect until the User ceases use of the Software or the developer notifies termination due to a breach of these terms.
+
+    **10. Applicable Law**  
+    These Terms are governed by the laws of Brazil. Any disputes will be resolved in the competent courts of [insert city/state].
+
+    **Contact:** For questions, reach out to kaynan.monteiro@example.com.
+    """,
+
+    "es": """
+    **Términos de Uso del Sistema de Book**  
+    **Versión 1.0 - Marzo de 2025**  
+    **Desarrollado por Kaynan Monteiro**  
+
+    Bienvenido al Sistema de Book ("Software"), una herramienta diseñada para organizar fotos y textos en presentaciones de Microsoft PowerPoint. Al utilizar este Software, usted ("Usuario") acepta los términos y condiciones aquí descritos. Lea cuidadosamente antes de continuar.
+
+    **1. Aceptación de los Términos**  
+    El uso del Software implica la aceptación total e incondicional de estos Términos de Uso. Si no está de acuerdo con alguna disposición, el Usuario debe cesar su uso inmediatamente.
+
+    **2. Licencia de Uso**  
+    El Software se proporciona bajo una licencia no exclusiva, intransferible y limitada para uso personal o profesional por parte del Usuario. Está expresamente prohibida la redistribución, venta o modificación del Software sin autorización expresa del desarrollador.
+
+    **3. Finalidad del Software**  
+    El Sistema de Book está destinado exclusivamente a la creación y organización de presentaciones en PowerPoint, permitiendo la inserción de fotos y textos en diapositivas predefinidas. Cualquier uso fuera de esta finalidad es responsabilidad del Usuario.
+
+    **4. Propiedad Intelectual**  
+    Todos los derechos de autor, marcas y otros elementos de propiedad intelectual del Software pertenecen a Kaynan Monteiro. El Usuario no adquiere ningún derecho más allá de la licencia de uso aquí concedida.
+
+    **5. Responsabilidades del Usuario**  
+    El Usuario es responsable de:  
+    - Garantizar que los datos ingresados (fotos, textos) no violen derechos de terceros;  
+    - Mantener copias de seguridad de sus archivos, ya que el Software no se responsabiliza por pérdidas de datos;  
+    - Utilizar el Software de acuerdo con las leyes aplicables.
+
+    **6. Limitación de Responsabilidad**  
+    El Software se proporciona "tal como está", sin garantías de ningún tipo. Kaynan Monteiro no se responsabiliza por daños directos, indirectos, incidentales o consecuentes derivados del uso o la incapacidad de usar el Software.
+
+    **7. Procesamiento de Datos**  
+    Todos los datos procesados por el Software se manejan localmente en el dispositivo del Usuario. No hay almacenamiento remoto ni transmisión de datos a terceros.
+
+    **8. Actualizaciones y Soporte**  
+    Las actualizaciones pueden ser proporcionadas a discreción del desarrollador. El soporte técnico es limitado y no está garantizado.
+
+    **9. Terminación**  
+    Estos Términos permanecen vigentes hasta que el Usuario deje de usar el Software o el desarrollador notifique su terminación por incumplimiento de estos términos.
+
+    **10. Ley Aplicable**  
+    Estos Términos se rigen por las leyes de Brasil. Cualquier disputa será resuelta en los tribunales competentes de [inserte ciudad/estado].
+
+    **Contacto:** Para dudas, contáctese con kaynan.monteiro@example.com.
+    """
+}
+
+FATOR_ESCALA = 96 / 3.50
+FORMATACOES = {
+    1: [{"left": 2.12, "top": 3.27, "width": 17.07, "height": 13.04}],
+    2: [{"left": 0.17, "top": 2.73, "width": 10.02, "height": 13.85}, {"left": 11.18, "top": 2.73, "width": 10.02, "height": 13.85}],
+    3: [{"left": 0.17, "top": 2.73, "width": 8.89, "height": 6.79}, {"left": 9.82, "top": 2.73, "width": 8.89, "height": 6.79}, {"left": 4.66, "top": 10.06, "width": 9.95, "height": 6.79}],
+    4: [{"left": 0.17, "top": 2.73, "width": 8.89, "height": 6.79}, {"left": 9.82, "top": 2.73, "width": 8.89, "height": 6.79}, {"left": 0.20, "top": 9.78, "width": 8.87, "height": 6.79}, {"left": 9.82, "top": 9.78, "width": 8.89, "height": 6.67}],
+    5: [{"left": 0.14, "top": 2.61, "width": 7.27, "height": 5.29}, {"left": 7.79, "top": 2.82, "width": 7.26, "height": 5.29}, {"left": 15.63, "top": 2.63, "width": 7.87, "height": 5.29}, {"left": 1.27, "top": 8.47, "width": 9.56, "height": 9.86}, {"left": 12.2, "top": 8.51, "width": 9.56, "height": 9.86}],
+    6: [{"left": 0.11, "top": 2.98, "width": 7.96, "height": 5.77}, {"left": 8.18, "top": 3.01, "width": 7.96, "height": 5.77}, {"left": 16.22, "top": 3.08, "width": 7.87, "height": 5.43}, {"left": 0.2, "top": 9.63, "width": 7.87, "height": 6.05}, {"left": 8.18, "top": 9.63, "width": 7.87, "height": 6.05}, {"left": 16.14, "top": 9.63, "width": 7.87, "height": 6.05}],
+}
+
+TRADUCOES = {
+    "pt-br": {
+        "titulo": "Sistema de Book",
+        "colar_fotos": "📸 Colar Fotos",
+        "inserir_texto": "✍️ Inserir Textos",
+        "ruptura_total": "⚠️ Ruptura Total",
+        "apagar_ppt": "🗑️ Apagar PPT",
+        "limpar_interface": "🧹 Limpar Interface",
+        "ajuda": "❓ Ajuda",
+        "lojas_processadas": "Lojas Processadas:",
+        "configuracoes": "Configurações",
+        "tema_claro": "Tema Claro",
+        "tema_escuro": "Tema Escuro",
+        "idioma": "Idioma",
+        "portugues": "Português (BR)",
+        "ingles": "Inglês",
+        "espanhol": "Espanhol",
+        "termos": "Termos de Uso",
+        "adicionar_loja": "➕ Adicionar Loja",
+        "colar_tudo": "📑 Colar Tudo",
+        "redimensionar": "🖌️ Redimensionar",
+        "desfazer": "↺ Desfazer",
+        "fornecedor": "FORNECEDOR:",
+        "promotor": "PROMOTOR:",
+        "rede": "REDE:",
+        "loja": "LOJA:",
+        "analista": "ANALISTA:",
+        "estado": "ESTADO:",
+        "cidade": "CIDADE:",
+        "data": "DATA:",
+        "hora": "HORA:",
+        "salvar_config": "Salvar Configurações",
+        "carregar_config": "Carregar Configurações",
+        "aguarde": "Aguarde...",
+        "concluido": "Concluído!",
+        "bem_vindo": "Bem-vindo, Analista!",
+        "iniciar_sistema": "Iniciar Sistema",
+    },
+    "en": {
+        "titulo": "Book System",
+        "colar_fotos": "📸 Paste Photos",
+        "inserir_texto": "✍️ Insert Texts",
+        "ruptura_total": "⚠️ Total Rupture",
+        "apagar_ppt": "🗑️ Delete PPT",
+        "limpar_interface": "🧹 Clear Interface",
+        "ajuda": "❓ Help",
+        "lojas_processadas": "Processed Stores:",
+        "configuracoes": "Settings",
+        "tema_claro": "Light Theme",
+        "tema_escuro": "Dark Theme",
+        "idioma": "Language",
+        "portugues": "Portuguese (BR)",
+        "ingles": "English",
+        "espanhol": "Spanish",
+        "termos": "Terms of Use",
+        "adicionar_loja": "➕ Add Store",
+        "colar_tudo": "📑 Paste All",
+        "redimensionar": "🖌️ Resize",
+        "desfazer": "↺ Undo",
+        "fornecedor": "SUPPLIER:",
+        "promotor": "PROMOTER:",
+        "rede": "NETWORK:",
+        "loja": "STORE:",
+        "analista": "ANALYST:",
+        "estado": "STATE:",
+        "cidade": "CITY:",
+        "data": "DATE:",
+        "hora": "TIME:",
+        "salvar_config": "Save Settings",
+        "carregar_config": "Load Settings",
+        "aguarde": "Please wait...",
+        "concluido": "Done!",
+        "bem_vindo": "Welcome, Analyst!",
+        "iniciar_sistema": "Start System",
+    },
+    "es": {
+        "titulo": "Sistema de Book",
+        "colar_fotos": "📸 Pegar Fotos",
+        "inserir_texto": "✍️ Insertar Textos",
+        "ruptura_total": "⚠️ Ruptura Total",
+        "apagar_ppt": "🗑️ Eliminar PPT",
+        "limpar_interface": "🧹 Limpiar Interfaz",
+        "ajuda": "❓ Ayuda",
+        "lojas_processadas": "Tiendas Procesadas:",
+        "configuracoes": "Configuraciones",
+        "tema_claro": "Tema Claro",
+        "tema_escuro": "Tema Oscuro",
+        "idioma": "Idioma",
+        "portugues": "Portugués (BR)",
+        "ingles": "Inglés",
+        "espanhol": "Español",
+        "termos": "Términos de Uso",
+        "adicionar_loja": "➕ Añadir Tienda",
+        "colar_tudo": "📑 Pegar Todo",
+        "redimensionar": "🖌️ Redimensionar",
+        "desfazer": "↺ Deshacer",
+        "fornecedor": "PROVEEDOR:",
+        "promotor": "PROMOTOR:",
+        "rede": "RED:",
+        "loja": "TIENDA:",
+        "analista": "ANALISTA:",
+        "estado": "ESTADO:",
+        "cidade": "CIUDAD:",
+        "data": "FECHA:",
+        "hora": "HORA:",
+        "salvar_config": "Guardar Configuraciones",
+        "carregar_config": "Cargar Configuraciones",
+        "aguarde": "Espere...",
+        "concluido": "¡Terminado!",
+        "bem_vindo": "¡Bienvenido, Analista!",
+        "iniciar_sistema": "Iniciar Sistema",
+    },
+}
+
+# Funções Utilitárias
+def verificar_termos_aceitos():
+    return os.path.exists(ARQUIVO_TERMOS)
+
+def salvar_aceitacao_termos():
+    with open(ARQUIVO_TERMOS, "w") as f:
+        f.write(f"Termos aceitos em: {time.ctime()}")
+
+def carregar_configuracoes():
+    global tema_atual, idioma_atual
+    if os.path.exists(ARQUIVO_CONFIG):
+        with open(ARQUIVO_CONFIG, "r") as f:
+            config = json.load(f)
+            tema_atual = config.get("tema", "claro")
+            idioma_atual = config.get("idioma", "pt-br")
+
+def salvar_configuracoes():
+    config = {"tema": tema_atual, "idioma": idioma_atual}
+    with open(ARQUIVO_CONFIG, "w") as f:
+        json.dump(config, f)
+    messagebox.showinfo("Sucesso", TRADUCOES[idioma_atual]["salvar_config"])
+
+def estimar_clima_sem_api():
+    """Estima o clima com base na hora e estação aproximada, sem API."""
+    agora = datetime.datetime.now()
+    hora = agora.hour
+    mes = agora.month
+    # Estação aproximada (Hemisfério Sul)
+    if 3 <= mes <= 5:
+        estacao = "Outono"
+    elif 6 <= mes <= 8:
+        estacao = "Inverno"
+    elif 9 <= mes <= 11:
+        estacao = "Primavera"
+    else:
+        estacao = "Verão"
+    # Estimativa simples de clima
+    if 6 <= hora <= 18:
+        if estacao in ["Verão", "Primavera"]:
+            return "☀️ Sol (estimado)"
+        elif estacao == "Outono":
+            return "⛅ Parcialmente nublado (estimado)"
+        else:
+            return "☁️ Nublado (estimado)"
+    else:
+        return "🌙 Noite (estimado)"
+
+def mostrar_tela_bem_vindo():
+    janela_bem_vindo = tk.Tk()
+    janela_bem_vindo.title("Bem-vindo")
+    janela_bem_vindo.geometry("400x300")
+    janela_bem_vindo.configure(bg=CORES["fundo_claro"])
+
+    # Atualizar hora em tempo real
+    def atualizar_hora(label):
+        hora_atual = datetime.datetime.now().strftime("%H:%M:%S")
+        label.config(text=f"Hora: {hora_atual}")
+        janela_bem_vindo.after(1000, lambda: atualizar_hora(label))
+
+    # Estimar localização aproximada via IP (sem API externa)
+    try:
+        hostname = socket.gethostname()
+        ip = socket.gethostbyname(hostname)
+        localizacao = f"IP Local: {ip}"
+    except:
+        localizacao = "Localização indisponível"
+
+    # Interface
+    ttk.Label(janela_bem_vindo, text=TRADUCOES[idioma_atual]["bem_vindo"], font=("Segoe UI", 16, "bold"), background=CORES["fundo_claro"]).pack(pady=20)
+    label_hora = ttk.Label(janela_bem_vindo, text="", font=("Segoe UI", 12), background=CORES["fundo_claro"])
+    label_hora.pack(pady=10)
+    atualizar_hora(label_hora)
+    ttk.Label(janela_bem_vindo, text=estimar_clima_sem_api(), font=("Segoe UI", 12), background=CORES["fundo_claro"]).pack(pady=10)
+    ttk.Label(janela_bem_vindo, text=localizacao, font=("Segoe UI", 10), background=CORES["fundo_claro"]).pack(pady=10)
+    ttk.Button(janela_bem_vindo, text=TRADUCOES[idioma_atual]["iniciar_sistema"], command=lambda: [janela_bem_vindo.destroy(), iniciar_sistema()]).pack(pady=20)
+
+    janela_bem_vindo.mainloop()
+
+def mostrar_termos_uso(janela_principal):
+    janela_termos = tk.Toplevel(janela_principal)
+    janela_termos.title(TRADUCOES[idioma_atual]["termos"])
+    janela_termos.geometry("600x700")
+    janela_termos.transient(janela_principal)
+    janela_termos.grab_set()
+
+    texto_termos = tk.Text(janela_termos, wrap=tk.WORD, height=35, width=70, bg=CORES["fundo_claro"], fg=CORES["texto_claro"], font=("Segoe UI", 10))
+    texto_termos.insert(tk.END, TERMOS_USO[idioma_atual])
+    texto_termos.config(state=tk.DISABLED)
+    texto_termos.pack(padx=10, pady=10)
+
+    frame_botoes = ttk.Frame(janela_termos)
+    frame_botoes.pack(pady=10)
+    if not verificar_termos_aceitos():
+        ttk.Button(frame_botoes, text="Aceitar", command=lambda: [salvar_aceitacao_termos(), janela_termos.destroy()]).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botoes, text="Recusar", command=lambda: [janela_termos.destroy(), janela_principal.destroy(), sys.exit(0)]).pack(side=tk.LEFT, padx=5)
+    else:
+        ttk.Button(frame_botoes, text="Fechar", command=janela_termos.destroy).pack(side=tk.LEFT, padx=5)
+
+def criar_pasta_fotos():
+    if not os.path.exists(PASTA_FOTOS):
+        os.makedirs(PASTA_FOTOS)
+
+def limpar_pasta_temp():
+    for arquivo in os.listdir(PASTA_FOTOS):
+        if not arquivo.startswith("copia_"):
+            caminho_arquivo = os.path.join(PASTA_FOTOS, arquivo)
+            if os.path.isfile(caminho_arquivo):
+                os.remove(caminho_arquivo)
+
+def finalizar_sistema():
+    limpar_pasta_temp()
+
+atexit.register(finalizar_sistema)
+
+def cm_para_pixels(cm):
+    return int(cm * FATOR_ESCALA)
+
+def salvar_estado(entradas, frame_imagens):
+    textos = {k: v.get() for k, v in entradas.items()}
+    fotos = [os.path.join(PASTA_FOTOS, f) for f in os.listdir(PASTA_FOTOS) if f.lower().endswith(('.png', '.jpg', '.jpeg')) and not f.startswith("copia_")]
+    historico_undo.append({"textos": textos.copy(), "fotos": fotos[:]})
+    if len(historico_undo) > 20:
+        historico_undo.pop(0)
+
+def desfazer_estado():
+    if not historico_undo:
+        return None
+    return historico_undo.pop()
+
+# Funções do PowerPoint
+def abrir_modelo_powerpoint():
+    powerpoint = win32com.client.Dispatch("PowerPoint.Application")
+    powerpoint.Visible = True
+    if os.path.exists(MODELO_PPT):
+        apresentacao = powerpoint.Presentations.Open(MODELO_PPT)
+        return apresentacao
+    else:
+        messagebox.showwarning("Aviso", "Modelo 'modelo_book.pptx' não encontrado. Criando novo arquivo.")
+        apresentacao = powerpoint.Presentations.Add()
+        apresentacao.Slides.Add(1, 11)  # Slide de título
+        apresentacao.Slides.Add(2, 12)  # Slide em branco (modelo)
+        apresentacao.Slides.Add(3, 11)  # Slide final
+        apresentacao.SaveAs(MODELO_PPT)
+        return apresentacao
+
+def colar_fotos_com_formatacao(slide, fotos, formatacao, manual=False):
+    for i, (foto, coord) in enumerate(zip(fotos, formatacao)):
+        caminho_foto = foto if os.path.isabs(foto) else os.path.join(PASTA_FOTOS, foto)
+        if not os.path.exists(caminho_foto):
+            continue
+        imagem = Image.open(caminho_foto)
+        left = cm_para_pixels(coord["left"])
+        top = cm_para_pixels(coord["top"])
+        if manual and not os.path.basename(caminho_foto).startswith("compressed_"):
+            width = imagem.width
+            height = imagem.height
+        else:
+            width = cm_para_pixels(coord["width"])
+            height = cm_para_pixels(coord["height"])
+            imagem_resized = imagem.resize((width, height), Image.Resampling.LANCZOS)
+            caminho_foto_comprimida = os.path.join(PASTA_FOTOS, f"compressed_{os.path.basename(caminho_foto)}")
+            imagem_resized.save(caminho_foto_comprimida, quality=50)
+            caminho_foto = caminho_foto_comprimida
+        slide.Shapes.AddPicture(caminho_foto, False, True, left, top, width, height)
+
+def inserir_texto_no_powerpoint(slide, textos):
+    for shape in slide.Shapes:
+        if shape.HasTextFrame:
+            texto_shape = shape.TextFrame.TextRange.Text.strip()
+            for campo, valor in textos.items():
+                if texto_shape.startswith(campo + ":"):
+                    shape.TextFrame.TextRange.Text = f"{campo}: {valor}"
+
+def limpar_slide(slide):
+    campos_esperados = ["FORNECEDOR", "PROMOTOR", "REDE", "LOJA", "ANALISTA", "ESTADO", "CIDADE", "DATA", "HORA"]
+    for shape in slide.Shapes:
+        if shape.Type == 13:  # Fotos
+            shape.Delete()
+        elif shape.HasTextFrame:
+            texto = shape.TextFrame.TextRange.Text.strip()
+            for campo in campos_esperados:
+                if texto.startswith(campo + ":"):
+                    shape.TextFrame.TextRange.Text = campo + ":"
+
+def colar_fotos_no_powerpoint(manual, entradas, frame_imagens, status_label):
+    fotos = [f for f in os.listdir(PASTA_FOTOS) if f.lower().endswith(('.png', '.jpg', '.jpeg')) and not f.startswith("copia_")]
+    if not fotos:
+        messagebox.showwarning("Aviso", "Nenhuma foto para colar.")
+        return
+    powerpoint = win32com.client.Dispatch("PowerPoint.Application")
+    if not powerpoint.Presentations.Count:
+        abrir_modelo_powerpoint()
+    apresentacao = powerpoint.ActivePresentation
+    slide_atual = apresentacao.Slides(powerpoint.ActiveWindow.Selection.SlideRange.SlideIndex)
+    num_fotos = len(fotos)
+    if num_fotos in FORMATACOES:
+        status_label.config(text="Colando fotos...")
+        for i in range(3):
+            status_label.config(text=f"Colando fotos{' .' * (i+1)}")
+            janela.update()
+            time.sleep(0.2)
+        salvar_estado(entradas, frame_imagens)
+        colar_fotos_com_formatacao(slide_atual, fotos, FORMATACOES[num_fotos], manual)
+        textos = {k: v.get() for k, v in entradas.items()}
+        inserir_texto_no_powerpoint(slide_atual, textos)
+        limpar_apenas_textos(entradas)
+        limpar_apenas_imagens(frame_imagens)  # Limpa fotos da interface após colar
+        limpar_historico(frame_imagens)
+        apresentacao.Save()
+        status_label.config(text="Pronto!")
+        messagebox.showinfo("Sucesso", "Fotos e textos colados!")
+    else:
+        messagebox.showwarning("Aviso", f"Sem formatação para {num_fotos} fotos.")
+
+def inserir_apenas_texto_no_powerpoint(entradas, frame_imagens, status_label):
+    powerpoint = win32com.client.Dispatch("PowerPoint.Application")
+    if not powerpoint.Presentations.Count:
+        abrir_modelo_powerpoint()
+    apresentacao = powerpoint.ActivePresentation
+    slide_atual = apresentacao.Slides(powerpoint.ActiveWindow.Selection.SlideRange.SlideIndex)
+    status_label.config(text="Inserindo textos...")
+    salvar_estado(entradas, frame_imagens)
+    for i in range(3):
+        status_label.config(text=f"Inserindo textos{' .' * (i+1)}")
+        janela.update()
+        time.sleep(0.2)
+    textos = {k: v.get() for k, v in entradas.items()}
+    inserir_texto_no_powerpoint(slide_atual, textos)
+    limpar_apenas_textos(entradas)
+    limpar_historico(frame_imagens)
+    apresentacao.Save()
+    status_label.config(text="Pronto!")
+    messagebox.showinfo("Sucesso", "Textos inseridos!")
+
+def apagar_elementos_powerpoint(opcao, status_label):
+    powerpoint = win32com.client.Dispatch("PowerPoint.Application")
+    if not powerpoint.Presentations.Count:
+        abrir_modelo_powerpoint()
+    apresentacao = powerpoint.ActivePresentation
+    slide_atual = apresentacao.Slides(powerpoint.ActiveWindow.Selection.SlideRange.SlideIndex)
+    status_label.config(text=f"Apagando {opcao.lower()}...")
+    fotos_apagadas = 0
+    textos_apagados = 0
+    campos_esperados = ["FORNECEDOR", "PROMOTOR", "REDE", "LOJA", "ANALISTA", "ESTADO", "CIDADE", "DATA", "HORA"]
+    for shape in slide_atual.Shapes:
+        if (opcao == "Fotos" or opcao == "Fotos e Textos") and shape.Type == 13:
+            shape.Delete()
+            fotos_apagadas += 1
+        if (opcao == "Textos" or opcao == "Fotos e Textos") and shape.HasTextFrame:
+            texto = shape.TextFrame.TextRange.Text.strip()
+            for campo in campos_esperados:
+                if texto.startswith(campo + ":"):
+                    shape.TextFrame.TextRange.Text = campo + ":"
+                    textos_apagados += 1
+    apresentacao.Save()
+    status_label.config(text="Pronto!")
+    messagebox.showinfo("Sucesso", f"Apagados: {fotos_apagadas} fotos, {textos_apagados} textos.")
+
+def ruptura_total(status_label):
+    powerpoint = win32com.client.Dispatch("PowerPoint.Application")
+    if not powerpoint.Presentations.Count:
+        abrir_modelo_powerpoint()
+    apresentacao = powerpoint.ActivePresentation
+    slide_atual = apresentacao.Slides(powerpoint.ActiveWindow.Selection.SlideRange.SlideIndex)
+    status_label.config(text="Inserindo Ruptura Total...")
+    formatacao = FORMATACOES[1][0]
+    left = cm_para_pixels(formatacao["left"])
+    top = cm_para_pixels(formatacao["top"])
+    width = cm_para_pixels(formatacao["width"])
+    height = cm_para_pixels(formatacao["height"])
+    shape = slide_atual.Shapes.AddTextbox(1, left, top, width, height)
+    shape.TextFrame.TextRange.Text = "RUPTURA TOTAL"
+    shape.TextFrame.TextRange.Font.Size = 46
+    shape.TextFrame.TextRange.Font.Bold = True
+    shape.TextFrame.TextRange.Font.Name = "Arial"
+    shape.TextFrame.TextRange.ParagraphFormat.Alignment = 2
+    apresentacao.Save()
+    status_label.config(text="Pronto!")
+    messagebox.showinfo("Sucesso", "Ruptura Total inserida!")
+
+def colar_tudo_no_powerpoint(entradas, frame_imagens, status_label, botao_colar_tudo):
+    if not dados_lojas:
+        messagebox.showwarning("Aviso", "Nenhuma loja adicionada.")
+        return
+    powerpoint = win32com.client.Dispatch("PowerPoint.Application")
+    if not powerpoint.Presentations.Count:
+        abrir_modelo_powerpoint()
+    apresentacao = powerpoint.ActivePresentation
+    if apresentacao.Slides.Count < 2:
+        messagebox.showerror("Erro", "A apresentação precisa ter pelo menos 2 slides (título e final).")
+        return
+
+    total_lojas = len(dados_lojas)
+    tempo_estimado = total_lojas * 0.5
+    botao_colar_tudo.config(state="disabled")
+    status_label.config(text=f"{TRADUCOES[idioma_atual]['aguarde']} ({tempo_estimado:.1f}s)")
+
+    dino_frames = ["🦖", "🦖", "🦖", "🏃‍♂️", "🏃‍♂️", "🏃‍♂️"]
+    cacto_frames = ["🌵", "🌵", "", "", "🌵", ""]
+    def animar_espera(contador=0):
+        if contador < total_lojas * 2:
+            frame_idx = contador % len(dino_frames)
+            status_label.config(text=f"{TRADUCOES[idioma_atual]['aguarde']} ({tempo_estimado - contador * 0.1:.1f}s) {dino_frames[frame_idx]} {cacto_frames[frame_idx]}")
+            janela.after(100, animar_espera, contador + 1)
+        else:
+            status_label.config(text=TRADUCOES[idioma_atual]["concluido"])
+
+    threading.Thread(target=animar_espera, daemon=True).start()
+
+    num_slides = apresentacao.Slides.Count
+    slide_modelo = apresentacao.Slides(num_slides - 1)
+    for i, loja in enumerate(dados_lojas):
+        novo_slide = slide_modelo.Duplicate()
+        novo_slide.MoveTo(num_slides + i)
+        limpar_slide(novo_slide)
+        num_fotos = len(loja["fotos"])
+        if num_fotos in FORMATACOES:
+            colar_fotos_com_formatacao(novo_slide, loja["fotos"], FORMATACOES[num_fotos])
+            inserir_texto_no_powerpoint(novo_slide, loja["textos"])
+        else:
+            messagebox.showwarning("Aviso", f"Loja {loja['textos']['LOJA']} tem {num_fotos} fotos sem formatação.")
+        janela.update()
+        time.sleep(0.1)
+
+    limpar_apenas_textos(entradas)
+    limpar_apenas_imagens(frame_imagens)  # Limpa fotos da interface
+    limpar_historico(frame_imagens)
+    dados_lojas.clear()
+    apresentacao.Save()
+    botao_colar_tudo.config(state="normal")
+    messagebox.showinfo("Sucesso", f"{total_lojas} lojas processadas!")
+
+# Funções da Interface
+def limpar_apenas_textos(entradas):
+    global ultimo_texto_processado
+    for entrada in entradas.values():
+        entrada.delete(0, tk.END)
+    ultimo_texto_processado = ""
+
+def limpar_apenas_imagens(frame_imagens):
+    global ultima_imagem_hash
+    limpar_pasta_temp()
+    ultima_imagem_hash = None
+    limpar_historico(frame_imagens)
+
+def limpar_historico(frame_imagens):
+    for widget in frame_imagens.winfo_children():
+        widget.destroy()
+
+def extrair_e_preencher_textos(entradas):
+    global ultimo_texto_processado
+    try:
+        texto = janela.clipboard_get()
+        if not texto or texto == ultimo_texto_processado or len(texto) > 1000:
+            return
+        ultimo_texto_processado = texto
+        campos_esperados = ["FORNECEDOR", "PROMOTOR", "REDE", "LOJA", "ANALISTA", "ESTADO", "CIDADE", "DATA", "HORA"]
+        for linha in texto.splitlines():
+            if ":" in linha:
+                campo, valor = linha.split(":", 1)
+                campo = campo.strip().upper()
+                if campo in campos_esperados and campo in entradas:
+                    entradas[campo].delete(0, tk.END)
+                    entradas[campo].insert(0, valor.strip())
+                    if campo == "LOJA" and valor.strip() not in historico_lojas:
+                        historico_lojas.append(valor.strip())
+                        atualizar_historico_lojas()
+        janela.clipboard_clear()
+    except tk.TclError:
+        pass
+
+def salvar_e_exibir_imagem(frame_imagens):
+    global ultima_imagem_hash
+    imagem = ImageGrab.grabclipboard()
+    if not imagem or not isinstance(imagem, Image.Image):
+        return
+    imagem_hash = hashlib.md5(imagem.tobytes()).hexdigest()
+    if imagem_hash == ultima_imagem_hash:
+        return
+    ultima_imagem_hash = imagem_hash
+    nome_arquivo = f"foto_{int(time.time())}.png"
+    caminho_arquivo = os.path.join(PASTA_FOTOS, nome_arquivo)
+    imagem.save(caminho_arquivo)
+    imagem.thumbnail((60, 60))
+    imagem_tk = ImageTk.PhotoImage(imagem)
+    label_imagem = ttk.Label(frame_imagens, image=imagem_tk)
+    label_imagem.image = imagem_tk
+    label_imagem.pack(side=tk.LEFT, padx=3, pady=3)
+    janela.clipboard_clear()
+
+def atualizar_historico_lojas():
+    historico_texto = "\n".join(historico_lojas[-5:]) if historico_lojas else "Nenhuma loja processada."
+    label_historico.config(text=f"{TRADUCOES[idioma_atual]['lojas_processadas']}\n{historico_texto}")
+
+def verificar_periodicamente(entradas, frame_imagens):
+    threading.Thread(target=lambda: salvar_e_exibir_imagem(frame_imagens), daemon=True).start()
+    threading.Thread(target=lambda: extrair_e_preencher_textos(entradas), daemon=True).start()
+    janela.after(2500, lambda: verificar_periodicamente(entradas, frame_imagens))
+
+def abrir_menu_apagar(status_label):
+    janela_opcao = tk.Toplevel(janela)
+    janela_opcao.title("Escolha o que apagar")
+    janela_opcao.geometry("250x150")
+    janela_opcao.transient(janela)
+    janela_opcao.grab_set()
+    ttk.Label(janela_opcao, text="O que deseja apagar?").pack(pady=10)
+    ttk.Button(janela_opcao, text="Apenas Fotos", command=lambda: [apagar_elementos_powerpoint("Fotos", status_label), janela_opcao.destroy()]).pack(pady=5)
+    ttk.Button(janela_opcao, text="Apenas Textos", command=lambda: [apagar_elementos_powerpoint("Textos", status_label), janela_opcao.destroy()]).pack(pady=5)
+    ttk.Button(janela_opcao, text="Fotos e Textos", command=lambda: [apagar_elementos_powerpoint("Fotos e Textos", status_label), janela_opcao.destroy()]).pack(pady=5)
+
+def abrir_menu_limpar_interface(entradas, frame_imagens, status_label):
+    janela_opcao = tk.Toplevel(janela)
+    janela_opcao.title("Limpar Interface")
+    janela_opcao.geometry("250x150")
+    janela_opcao.transient(janela)
+    janela_opcao.grab_set()
+    ttk.Label(janela_opcao, text="O que deseja limpar?").pack(pady=10)
+    def limpar_com_animacao(opcao):
+        janela_opcao.destroy()
+        status_label.config(text="🧹 Limpando...")
+        for i in range(3):
+            status_label.config(text=f"🧹 Limpando{' .' * (i+1)}")
+            janela.update()
+            time.sleep(0.2)
+        salvar_estado(entradas, frame_imagens)
+        if opcao == "textos":
+            limpar_apenas_textos(entradas)
+        elif opcao == "fotos":
+            limpar_apenas_imagens(frame_imagens)
+        else:
+            limpar_apenas_textos(entradas)
+            limpar_apenas_imagens(frame_imagens)
+        status_label.config(text="Pronto!")
+    ttk.Button(janela_opcao, text="Apenas Textos", command=lambda: limpar_com_animacao("textos")).pack(pady=5)
+    ttk.Button(janela_opcao, text="Apenas Fotos", command=lambda: limpar_com_animacao("fotos")).pack(pady=5)
+    ttk.Button(janela_opcao, text="Textos e Fotos", command=lambda: limpar_com_animacao("ambos")).pack(pady=5)
+
+def abrir_janela_redimensionar(entradas, frame_imagens, status_label):
+    fotos = [f for f in os.listdir(PASTA_FOTOS) if f.lower().endswith(('.png', '.jpg', '.jpeg')) and not f.startswith("copia_")]
+    if not fotos:
+        messagebox.showinfo("Aviso", "Nenhuma foto para redimensionar.")
+        return
+    janela_redim = tk.Toplevel(janela)
+    janela_redim.title(TRADUCOES[idioma_atual]["redimensionar"])
+    janela_redim.geometry("450x550")
+    janela_redim.transient(janela)
+    janela_redim.grab_set()
+    ttk.Label(janela_redim, text="Selecione a foto:").pack(pady=10)
+    combo_fotos = ttk.Combobox(janela_redim, values=[f"Foto {i+1}" for i in range(len(fotos))])
+    combo_fotos.pack(pady=5)
+    combo_fotos.current(0)
+    canvas = tk.Canvas(janela_redim, bg="white")
+    canvas.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+    imagem_atual = None
+    foto_id = None
+    resize_handle = None
+    x_inicial, y_inicial = 0, 0
+    largura_inicial, altura_inicial = 0, 0
+
+    def carregar_imagem(indice):
+        nonlocal imagem_atual, foto_id, resize_handle
+        caminho_foto = os.path.join(PASTA_FOTOS, fotos[indice])
+        imagem = Image.open(caminho_foto)
+        largura, altura = imagem.size
+        proporcao = min(350/largura, 350/altura)
+        nova_largura = int(largura * proporcao)
+        nova_altura = int(altura * proporcao)
+        imagem_redim = imagem.resize((nova_largura, nova_altura), Image.Resampling.LANCZOS)
+        imagem_atual = ImageTk.PhotoImage(imagem_redim)
+        canvas.delete("all")
+        foto_id = canvas.create_image(225, 225, image=imagem_atual)
+        resize_handle = canvas.create_rectangle(
+            225 + nova_largura//2 - 10, 225 + nova_altura//2 - 10,
+            225 + nova_largura//2 + 10, 225 + nova_altura//2 + 10,
+            fill="#e6e6fa", outline="white", tags="resize_handle"
+        )
+        canvas.tag_bind("resize_handle", "<Button-1>", iniciar_arrasto)
+        canvas.tag_bind("resize_handle", "<B1-Motion>", arrastar)
+        canvas.tag_bind("resize_handle", "<ButtonRelease-1>", finalizar_arrasto)
+
+    def iniciar_arrasto(event):
+        nonlocal x_inicial, y_inicial, largura_inicial, altura_inicial
+        x_inicial, y_inicial = event.x, event.y
+        largura_inicial = imagem_atual.width()
+        altura_inicial = imagem_atual.height()
+
+    def arrastar(event):
+        dx = event.x - x_inicial
+        dy = event.y - y_inicial
+        nova_largura = max(50, largura_inicial + dx)
+        nova_altura = max(50, altura_inicial + dy)
+        imagem = Image.open(os.path.join(PASTA_FOTOS, fotos[combo_fotos.current()]))
+        imagem_redim = imagem.resize((nova_largura, nova_altura), Image.Resampling.LANCZOS)
+        canvas.image = ImageTk.PhotoImage(imagem_redim)
+        canvas.itemconfig(foto_id, image=canvas.image)
+        canvas.coords("resize_handle", 
+                      225 + nova_largura//2 - 10, 225 + nova_altura//2 - 10,
+                      225 + nova_largura//2 + 10, 225 + nova_altura//2 + 10)
+
+    def finalizar_arrasto(event):
+        nova_largura = canvas.image.width()
+        nova_altura = canvas.image.height()
+        caminho_foto = os.path.join(PASTA_FOTOS, fotos[combo_fotos.current()])
+        imagem = Image.open(caminho_foto)
+        imagem_redim = imagem.resize((nova_largura, nova_altura), Image.Resampling.LANCZOS)
+        imagem_redim.save(caminho_foto)
+        atualizar_imagens_interface(frame_imagens)
+
+    combo_fotos.bind("<<ComboboxSelected>>", lambda e: carregar_imagem(combo_fotos.current()))
+    carregar_imagem(0)
+    ttk.Button(janela_redim, text=TRADUCOES[idioma_atual]["colar_fotos"], command=lambda: [colar_fotos_no_powerpoint(True, entradas, frame_imagens, status_label), janela_redim.destroy()]).pack(pady=10)
+
+def atualizar_imagens_interface(frame_imagens):
+    limpar_historico(frame_imagens)
+    for foto in os.listdir(PASTA_FOTOS):
+        if foto.lower().endswith(('.png', '.jpg', '.jpeg')) and not foto.startswith("copia_"):
+            caminho_arquivo = os.path.join(PASTA_FOTOS, foto)
+            imagem = Image.open(caminho_arquivo)
+            imagem.thumbnail((60, 60))
+            imagem_tk = ImageTk.PhotoImage(imagem)
+            label_imagem = ttk.Label(frame_imagens, image=imagem_tk)
+            label_imagem.image = imagem_tk
+            label_imagem.pack(side=tk.LEFT, padx=3, pady=3)
+
+def adicionar_loja_interface(entradas, frame_imagens, status_label):
+    textos = {k: v.get() for k, v in entradas.items()}
+    fotos = [os.path.join(PASTA_FOTOS, f) for f in os.listdir(PASTA_FOTOS) if f.lower().endswith(('.png', '.jpg', '.jpeg')) and not f.startswith("copia_")]
+    if not textos.get("LOJA") or not fotos:
+        messagebox.showwarning("Aviso", "Preencha 'LOJA' e adicione pelo menos uma foto.")
+        return
+    status_label.config(text="Adicionando loja...")
+    fotos_copia = []
+    for foto in fotos:
+        caminho_copia = os.path.join(PASTA_FOTOS, f"copia_{time.time()}_{os.path.basename(foto)}")
+        with open(foto, "rb") as f:
+            with open(caminho_copia, "wb") as f_copia:
+                f_copia.write(f.read())
+        fotos_copia.append(caminho_copia)
+    dados_lojas.append({"textos": textos.copy(), "fotos": fotos_copia})
+    limpar_apenas_textos(entradas)
+    limpar_apenas_imagens(frame_imagens)
+    status_label.config(text=f"Pronto! {len(dados_lojas)} lojas prontas.")
+    messagebox.showinfo("Sucesso", f"Loja '{textos['LOJA']}' adicionada! Total: {len(dados_lojas)}")
+
+def desfazer(entradas, frame_imagens, status_label):
+    estado = desfazer_estado()
+    if not estado:
+        messagebox.showinfo("Aviso", "Nada para desfazer.")
+        return
+    status_label.config(text="Desfazendo...")
+    limpar_apenas_textos(entradas)
+    limpar_apenas_imagens(frame_imagens)
+    for campo, valor in estado["textos"].items():
+        entradas[campo].delete(0, tk.END)
+        entradas[campo].insert(0, valor)
+    for foto in estado["fotos"]:
+        caminho_copia = os.path.join(PASTA_FOTOS, f"restaurada_{time.time()}_{os.path.basename(foto)}")
+        with open(foto, "rb") as f:
+            with open(caminho_copia, "wb") as f_copia:
+                f_copia.write(f.read())
+        imagem = Image.open(caminho_copia)
+        imagem.thumbnail((60, 60))
+        imagem_tk = ImageTk.PhotoImage(imagem)
+        label_imagem = ttk.Label(frame_imagens, image=imagem_tk)
+        label_imagem.image = imagem_tk
+        label_imagem.pack(side=tk.LEFT, padx=3, pady=3)
+    status_label.config(text="Pronto!")
+
+def abrir_janela_ajuda():
+    janela_ajuda = tk.Toplevel(janela)
+    janela_ajuda.title(TRADUCOES[idioma_atual]["ajuda"])
+    janela_ajuda.geometry("700x600")
+    janela_ajuda.transient(janela)
+    janela_ajuda.grab_set()
+    passos = [
+        ("Introdução", """
+        Bem-vindo ao Sistema de Book! Este software foi criado para facilitar a organização de fotos e textos em apresentações do Microsoft PowerPoint. Ele é ideal para analistas que precisam criar relatórios visuais de forma rápida e eficiente. Aqui, você aprenderá tudo o que precisa para usar o sistema ao máximo!
+
+        O programa permite copiar fotos e textos da área de transferência, organizá-los na interface e inseri-los em slides do PowerPoint com formatações pré-definidas. Além disso, oferece funcionalidades como redimensionar fotos, desfazer ações e processar várias lojas de uma vez. Vamos explorar cada função passo a passo!
+        """),
+        ("Iniciar o Sistema", """
+        Ao abrir o programa, você verá uma tela de boas-vindas com:  
+        - A hora atual, atualizada em tempo real;  
+        - Uma saudação "Bem-vindo, Analista!";  
+        - Uma estimativa simples do clima baseada na hora e estação;  
+        - Um botão "Iniciar Sistema".  
+
+        Clique em "Iniciar Sistema" para acessar a interface principal. Se nenhum PowerPoint estiver aberto, o sistema criará ou abrirá o arquivo 'modelo_book.pptx' automaticamente com 3 slides: um de título, um modelo em branco e um final. Certifique-se de que o PowerPoint está instalado e funcionando!
+        """),
+        ("Adicionar uma Loja", """
+        Para adicionar uma loja ao sistema:  
+        1. Copie os textos (ex.: "LOJA: Loja 1", "FORNECEDOR: Fornecedor X") para a área de transferência usando Ctrl+C. Esses textos devem seguir o formato "CAMPO: VALOR".  
+        2. Copie as fotos desejadas (Ctrl+C) de qualquer pasta, captura de tela ou programa.  
+        3. As fotos aparecerão como miniaturas na interface, e os textos preencherão os campos automaticamente.  
+        4. Clique no botão "➕ Adicionar Loja" para salvar esses dados temporariamente.  
+
+        Repita esse processo para cada loja que deseja processar. Os dados ficam armazenados até você usar "Colar Tudo" ou limpar a interface!
+        """),
+        ("Colar Tudo", """
+        Após adicionar todas as lojas:  
+        1. Clique em "📑 Colar Tudo".  
+        2. O sistema usará o penúltimo slide do PowerPoint como modelo (certifique-se de que ele existe).  
+        3. Para cada loja adicionada, o sistema:  
+           - Duplica o slide modelo;  
+           - Limpa o conteúdo existente (fotos e textos);  
+           - Insere as fotos e textos da loja na posição correta.  
+        4. Durante o processo, uma animação com um dinossauro correndo aparece, junto com o tempo estimado restante.  
+        5. Quando terminar, você verá "Concluído!" e os novos slides estarão antes do último slide original.  
+
+        Após isso, a interface é limpa, e o PowerPoint é salvo automaticamente!
+        """),
+        ("Colar Fotos", """
+        Para inserir fotos e textos no slide atual do PowerPoint:  
+        1. Copie os textos e fotos desejados (como em "Adicionar uma Loja").  
+        2. Verifique se as fotos aparecem como miniaturas na interface e os textos estão nos campos.  
+        3. Clique em "📸 Colar Fotos".  
+        4. O sistema:  
+           - Posiciona as fotos no slide atual conforme o número delas (1 a 6), usando as formatações pré-definidas;  
+           - Preenche os campos de texto correspondentes (ex.: "LOJA:", "REDE:");  
+           - Limpa a interface (textos e fotos) após colar.  
+        5. O PowerPoint é salvo automaticamente, e você verá "Pronto!" na barra de status.  
+
+        Se o número de fotos não estiver entre 1 e 6, você receberá um aviso!
+        """),
+        ("Inserir Textos", """
+        Para adicionar apenas textos ao slide atual:  
+        1. Copie os textos desejados (ex.: "REDE: Rede ABC", "DATA: 11/03/2025") para a área de transferência.  
+        2. Verifique se os campos na interface foram preenchidos automaticamente.  
+        3. Clique em "✍️ Inserir Textos".  
+        4. O sistema:  
+           - Insere os textos nos campos correspondentes do slide atual (ex.: "REDE:", "DATA:");  
+           - Não altera fotos existentes no slide;  
+           - Limpa os campos de texto da interface após a inserção.  
+        5. O PowerPoint é salvo, e a mensagem "Textos inseridos!" aparece.  
+
+        Use isso para atualizar informações sem mexer nas fotos!
+        """),
+        ("Redimensionar Fotos", """
+        Para ajustar o tamanho de uma foto antes de colar:  
+        1. Copie as fotos para a interface (elas aparecem como miniaturas).  
+        2. Clique em "🖌️ Redimensionar".  
+        3. Na janela que abrir:  
+           - Escolha a foto no menu suspenso (ex.: "Foto 1");  
+           - Arraste o quadrado no canto da foto para aumentar ou diminuir o tamanho;  
+           - Ajuste até ficar satisfeito com o resultado.  
+        4. Clique em "📸 Colar Fotos" na janela de redimensionamento para inserir a foto ajustada no slide atual.  
+
+        Isso é útil para personalizar o tamanho antes de usar "Colar Fotos" ou "Colar Tudo"!
+        """),
+        ("Marcar Ruptura Total", """
+        Para indicar uma ruptura no slide atual:  
+        1. Selecione o slide desejado no PowerPoint.  
+        2. Clique em "⚠️ Ruptura Total".  
+        3. O sistema:  
+           - Adiciona o texto "RUPTURA TOTAL" no slide;  
+           - Usa fonte Arial, tamanho 46, em negrito, centralizado;  
+           - Posiciona o texto conforme a formatação de uma foto única.  
+        4. O PowerPoint é salvo, e você verá "Ruptura Total inserida!" na tela.  
+
+        Isso destaca problemas graves no slide de forma clara e visível!
+        """),
+        ("Apagar do PowerPoint", """
+        Para remover itens do slide atual:  
+        1. Clique em "🗑️ Apagar PPT".  
+        2. Escolha uma opção no menu que aparece:  
+           - "Apenas Fotos": remove todas as imagens do slide;  
+           - "Apenas Textos": limpa os valores dos campos de texto, mantendo os rótulos (ex.: "LOJA:");  
+           - "Fotos e Textos": apaga tudo (fotos e valores de texto).  
+        3. O sistema executa a ação, salva o PowerPoint e mostra quantos itens foram apagados (ex.: "Apagados: 2 fotos, 3 textos").  
+
+        A estrutura do slide (caixas de texto vazias) é mantida para reutilização!
+        """),
+        ("Limpar a Interface", """
+        Para limpar a interface do sistema:  
+        1. Clique em "🧹 Limpar Interface".  
+        2. Escolha no menu:  
+           - "Apenas Textos": apaga os campos de texto da interface;  
+           - "Apenas Fotos": remove as miniaturas e arquivos temporários de fotos;  
+           - "Textos e Fotos": limpa tudo na interface.  
+        3. Uma animação de limpeza aparece, e o estado anterior é salvo para "Desfazer".  
+        4. O PowerPoint não é afetado por essa ação.  
+
+        Use isso para começar um novo processo sem mexer no arquivo do PowerPoint!
+        """),
+        ("Desfazer Ações", """
+        Se cometer um erro:  
+        1. Clique em "↺ Desfazer".  
+        2. O sistema restaura:  
+           - Os textos nos campos da interface;  
+           - As fotos como miniaturas (recuperadas do estado anterior).  
+        3. Você pode desfazer até 20 ações anteriores, uma por vez.  
+        4. Após desfazer, a barra de status mostra "Pronto!".  
+
+        Isso é útil para corrigir ações como colar, limpar ou adicionar lojas por engano!
+        """),
+        ("Dicas Finais", """
+        Aqui vão algumas dicas para aproveitar o sistema:  
+        - **Modelo Ideal**: O PowerPoint deve ter pelo menos 2 slides (título e final). O penúltimo slide é usado como base para "Colar Tudo".  
+        - **PowerPoint Aberto**: Se já houver um arquivo aberto, o sistema o usará; caso contrário, cria/abre o 'modelo_book.pptx'.  
+        - **Salvamento**: Salve seu trabalho no PowerPoint manualmente para evitar perdas, além do salvamento automático do sistema.  
+        - **Configurações**: Use o menu "⚙" para mudar tema (claro/escuro), idioma (PT/EN/ES) ou revisar os Termos de Uso.  
+        - **Fotos**: Até 6 fotos por slide são suportadas; mais que isso gera um aviso.  
+
+        Explore todas as funções e boa sorte nos seus relatórios!
+        """),
+    ]
+    passo_atual = tk.IntVar(value=0)
+    texto_ajuda = tk.Text(janela_ajuda, wrap=tk.WORD, height=30, width=80, bg=CORES["fundo_claro"], fg=CORES["texto_claro"], font=("Segoe UI", 10))
+    texto_ajuda.pack(padx=10, pady=10)
+    texto_ajuda.insert(tk.END, passos[0][1])
+    texto_ajuda.config(state=tk.DISABLED)
+    frame_navegacao = ttk.Frame(janela_ajuda)
+    frame_navegacao.pack(pady=10)
+    def atualizar_passo(delta):
+        novo_passo = passo_atual.get() + delta
+        if 0 <= novo_passo < len(passos):
+            passo_atual.set(novo_passo)
+            texto_ajuda.config(state=tk.NORMAL)
+            texto_ajuda.delete(1.0, tk.END)
+            texto_ajuda.insert(tk.END, passos[novo_passo][1])
+            texto_ajuda.config(state=tk.DISABLED)
+            label_passo.config(text=f"Passo {novo_passo + 1}/{len(passos)}: {passos[novo_passo][0]}")
+    ttk.Button(frame_navegacao, text="◄ Anterior", command=lambda: atualizar_passo(-1)).pack(side=tk.LEFT, padx=5)
+    label_passo = ttk.Label(frame_navegacao, text=f"Passo 1/{len(passos)}: {passos[0][0]}")
+    label_passo.pack(side=tk.LEFT, padx=5)
+    ttk.Button(frame_navegacao, text="Próximo ►", command=lambda: atualizar_passo(1)).pack(side=tk.LEFT, padx=5)
+
+# Temas e Configuraçõesações (continuação corrigida)
+def aplicar_tema():
+    style = ttk.Style()
+    if tema_atual == "claro":
+        janela.configure(bg=CORES["fundo_claro"])
+        style.configure("TLabel", background=CORES["fundo_claro"], foreground=CORES["texto_claro"])
+        style.configure("TEntry", fieldbackground="#ffffff", foreground=CORES["texto_claro"])
+        style.configure("TButton", foreground=CORES["texto_claro"])
+        style.configure("ColarFotos.TButton", background=CORES["botao_colar_fotos"])
+        style.configure("InserirTexto.TButton", background=CORES["botao_inserir_texto"])
+        style.configure("Ruptura.TButton", background=CORES["botao_ruptura_total"])
+        style.configure("Apagar.TButton", background=CORES["botao_apagar"])
+        style.configure("Limpar.TButton", background=CORES["botao_limpar"])
+        style.configure("Adicionar.TButton", background=CORES["botao_adicionar"])
+        style.configure("ColarTudo.TButton", background=CORES["botao_colar_tudo"])
+        style.configure("Redimensionar.TButton", background=CORES["botao_redimensionar"])
+        style.configure("Desfazer.TButton", background=CORES["botao_desfazer"])
+        style.configure("Ajuda.TButton", background=CORES["botao_ajuda"])
+        style.map("TButton", background=[("active", CORES["botao_hover_claro"])])
+        label_marca_dagua.configure(foreground=CORES["marca_dagua_claro"], background=CORES["fundo_claro"])
+        frame_imagens.configure(style="TFrame")
+    else:
+        janela.configure(bg=CORES["fundo_escuro"])
+        style.configure("TLabel", background=CORES["fundo_escuro"], foreground=CORES["texto_escuro"])
+        style.configure("TEntry", fieldbackground="#4a4a4a", foreground=CORES["texto_escuro"])
+        style.configure("TButton", foreground=CORES["texto_escuro"])
+        style.configure("DarkColarFotos.TButton", background=CORES["botao_colar_fotos"])
+        style.configure("DarkInserirTexto.TButton", background=CORES["botao_inserir_texto"])
+        style.configure("DarkRuptura.TButton", background=CORES["botao_ruptura_total"])
+        style.configure("DarkApagar.TButton", background=CORES["botao_apagar"])
+        style.configure("DarkLimpar.TButton", background=CORES["botao_limpar"])
+        style.configure("DarkAdicionar.TButton", background=CORES["botao_adicionar"])
+        style.configure("DarkColarTudo.TButton", background=CORES["botao_colar_tudo"])
+        style.configure("DarkRedimensionar.TButton", background=CORES["botao_redimensionar"])
+        style.configure("DarkDesfazer.TButton", background=CORES["botao_desfazer"])
+        style.configure("DarkAjuda.TButton", background=CORES["botao_ajuda"])
+        style.map("TButton", background=[("active", CORES["botao_hover_escuro"])])
+        label_marca_dagua.configure(foreground=CORES["marca_dagua_escuro"], background=CORES["fundo_escuro"])
+        frame_imagens.configure(style="TFrame")
+    janela.update()
+
+def abrir_configuracoes():
+    janela_config = tk.Toplevel(janela)
+    janela_config.title(TRADUCOES[idioma_atual]["configuracoes"])
+    janela_config.geometry("300x400")
+    janela_config.transient(janela)
+    janela_config.grab_set()
+
+    ttk.Label(janela_config, text=TRADUCOES[idioma_atual]["tema_claro"]).pack(pady=5)
+    ttk.Radiobutton(janela_config, text=TRADUCOES[idioma_atual]["tema_claro"], value="claro", variable=tema_atual, command=aplicar_tema).pack()
+    ttk.Radiobutton(janela_config, text=TRADUCOES[idioma_atual]["tema_escuro"], value="escuro", variable=tema_atual, command=aplicar_tema).pack()
+
+    ttk.Label(janela_config, text=TRADUCOES[idioma_atual]["idioma"]).pack(pady=5)
+    ttk.Radiobutton(janela_config, text=TRADUCOES[idioma_atual]["portugues"], value="pt-br", variable=idioma_atual, command=atualizar_textos).pack()
+    ttk.Radiobutton(janela_config, text=TRADUCOES[idioma_atual]["ingles"], value="en", variable=idioma_atual, command=atualizar_textos).pack()
+    ttk.Radiobutton(janela_config, text=TRADUCOES[idioma_atual]["espanhol"], value="es", variable=idioma_atual, command=atualizar_textos).pack()
+
+    ttk.Button(janela_config, text=TRADUCOES[idioma_atual]["salvar_config"], command=salvar_configuracoes).pack(pady=10)
+    ttk.Button(janela_config, text=TRADUCOES[idioma_atual]["carregar_config"], command=lambda: [carregar_configuracoes(), aplicar_tema(), atualizar_textos()]).pack(pady=10)
+    ttk.Button(janela_config, text=TRADUCOES[idioma_atual]["termos"], command=lambda: mostrar_termos_uso(janela_config)).pack(pady=10)
+
+def atualizar_textos():
+    janela.title(TRADUCOES[idioma_atual]["titulo"])
+    botao_colar_fotos.config(text=TRADUCOES[idioma_atual]["colar_fotos"])
+    botao_inserir_texto.config(text=TRADUCOES[idioma_atual]["inserir_texto"])
+    botao_ruptura_total.config(text=TRADUCOES[idioma_atual]["ruptura_total"])
+    botao_apagar.config(text=TRADUCOES[idioma_atual]["apagar_ppt"])
+    botao_limpar.config(text=TRADUCOES[idioma_atual]["limpar_interface"])
+    botao_adicionar.config(text=TRADUCOES[idioma_atual]["adicionar_loja"])
+    botao_colar_tudo.config(text=TRADUCOES[idioma_atual]["colar_tudo"])
+    botao_redimensionar.config(text=TRADUCOES[idioma_atual]["redimensionar"])
+    botao_desfazer.config(text=TRADUCOES[idioma_atual]["desfazer"])
+    botao_ajuda.config(text=TRADUCOES[idioma_atual]["ajuda"])
+    label_historico.config(text=f"{TRADUCOES[idioma_atual]['lojas_processadas']}\n{'Nenhuma loja processada.' if not historico_lojas else '\n'.join(historico_lojas[-5:])}")
+    for label, campo in zip(labels_entradas, ["fornecedor", "promotor", "rede", "loja", "analista", "estado", "cidade", "data", "hora"]):
+        label.config(text=TRADUCOES[idioma_atual][campo])
+
+# Interface Principal
+def iniciar_sistema():
+    global janela, frame_imagens, label_historico, botao_colar_fotos, botao_inserir_texto, botao_ruptura_total, botao_apagar, botao_limpar, botao_adicionar, botao_colar_tudo, botao_redimensionar, botao_desfazer, botao_ajuda, label_marca_dagua, labels_entradas
+
+    if not verificar_termos_aceitos():
+        mostrar_termos_uso(None)
+        if not verificar_termos_aceitos():
+            sys.exit(0)
+
+    criar_pasta_fotos()
+    carregar_configuracoes()
+
+    janela = tk.Tk()
+    janela.title(TRADUCOES[idioma_atual]["titulo"])
+    janela.geometry("700x800")
+    janela.resizable(False, False)
+
+    style = ttk.Style()
+    style.configure("TFrame", background=CORES["fundo_claro"])
+
+    frame_botoes = ttk.Frame(janela)
+    frame_botoes.pack(pady=10)
+
+    botao_colar_fotos = ttk.Button(frame_botoes, text=TRADUCOES[idioma_atual]["colar_fotos"], command=lambda: colar_fotos_no_powerpoint(False, entradas, frame_imagens, status_label), style="ColarFotos.TButton" if tema_atual == "claro" else "DarkColarFotos.TButton")
+    botao_colar_fotos.pack(side=tk.LEFT, padx=5)
+
+    botao_inserir_texto = ttk.Button(frame_botoes, text=TRADUCOES[idioma_atual]["inserir_texto"], command=lambda: inserir_apenas_texto_no_powerpoint(entradas, frame_imagens, status_label), style="InserirTexto.TButton" if tema_atual == "claro" else "DarkInserirTexto.TButton")
+    botao_inserir_texto.pack(side=tk.LEFT, padx=5)
+
+    botao_ruptura_total = ttk.Button(frame_botoes, text=TRADUCOES[idioma_atual]["ruptura_total"], command=lambda: ruptura_total(status_label), style="Ruptura.TButton" if tema_atual == "claro" else "DarkRuptura.TButton")
+    botao_ruptura_total.pack(side=tk.LEFT, padx=5)
+
+    botao_apagar = ttk.Button(frame_botoes, text=TRADUCOES[idioma_atual]["apagar_ppt"], command=lambda: abrir_menu_apagar(status_label), style="Apagar.TButton" if tema_atual == "claro" else "DarkApagar.TButton")
+    botao_apagar.pack(side=tk.LEFT, padx=5)
+
+    botao_limpar = ttk.Button(frame_botoes, text=TRADUCOES[idioma_atual]["limpar_interface"], command=lambda: abrir_menu_limpar_interface(entradas, frame_imagens, status_label), style="Limpar.TButton" if tema_atual == "claro" else "DarkLimpar.TButton")
+    botao_limpar.pack(side=tk.LEFT, padx=5)
+
+    frame_botoes_secundarios = ttk.Frame(janela)
+    frame_botoes_secundarios.pack(pady=5)
+
+    botao_adicionar = ttk.Button(frame_botoes_secundarios, text=TRADUCOES[idioma_atual]["adicionar_loja"], command=lambda: adicionar_loja_interface(entradas, frame_imagens, status_label), style="Adicionar.TButton" if tema_atual == "claro" else "DarkAdicionar.TButton")
+    botao_adicionar.pack(side=tk.LEFT, padx=5)
+
+    botao_colar_tudo = ttk.Button(frame_botoes_secundarios, text=TRADUCOES[idioma_atual]["colar_tudo"], command=lambda: colar_tudo_no_powerpoint(entradas, frame_imagens, status_label, botao_colar_tudo), style="ColarTudo.TButton" if tema_atual == "claro" else "DarkColarTudo.TButton")
+    botao_colar_tudo.pack(side=tk.LEFT, padx=5)
+
+    botao_redimensionar = ttk.Button(frame_botoes_secundarios, text=TRADUCOES[idioma_atual]["redimensionar"], command=lambda: abrir_janela_redimensionar(entradas, frame_imagens, status_label), style="Redimensionar.TButton" if tema_atual == "claro" else "DarkRedimensionar.TButton")
+    botao_redimensionar.pack(side=tk.LEFT, padx=5)
+
+    botao_desfazer = ttk.Button(frame_botoes_secundarios, text=TRADUCOES[idioma_atual]["desfazer"], command=lambda: desfazer(entradas, frame_imagens, status_label), style="Desfazer.TButton" if tema_atual == "claro" else "DarkDesfazer.TButton")
+    botao_desfazer.pack(side=tk.LEFT, padx=5)
+
+    botao_ajuda = ttk.Button(frame_botoes_secundarios, text=TRADUCOES[idioma_atual]["ajuda"], command=abrir_janela_ajuda, style="Ajuda.TButton" if tema_atual == "claro" else "DarkAjuda.TButton")
+    botao_ajuda.pack(side=tk.LEFT, padx=5)
+
+    ttk.Button(frame_botoes_secundarios, text="⚙", command=abrir_configuracoes).pack(side=tk.LEFT, padx=5)
+
+    frame_entradas = ttk.Frame(janela)
+    frame_entradas.pack(pady=10)
+
+    entradas = {}
+    labels_entradas = []
+    campos = ["fornecedor", "promotor", "rede", "loja", "analista", "estado", "cidade", "data", "hora"]
+    for campo in campos:
+        label = ttk.Label(frame_entradas, text=TRADUCOES[idioma_atual][campo])
+        label.pack(anchor="w", padx=5)
+        labels_entradas.append(label)
+        entrada = ttk.Entry(frame_entradas, width=50)
+        entrada.pack(pady=2)
+        entradas[campo.upper()] = entrada
+
+    frame_imagens = ttk.Frame(janela, height=80, style="TFrame")
+    frame_imagens.pack(fill=tk.X, padx=10, pady=5)
+
+    label_historico = ttk.Label(janela, text=f"{TRADUCOES[idioma_atual]['lojas_processadas']}\nNenhuma loja processada.")
+    label_historico.pack(pady=5)
+
+    status_label = ttk.Label(janela, text="")
+    status_label.pack(pady=5)
+
+    label_marca_dagua = ttk.Label(janela, text="Desenvolvido por Kaynan Monteiro", font=("Arial", 8))
+    label_marca_dagua.pack(side=tk.BOTTOM, pady=5)
+
+    aplicar_tema()
+    verificar_periodicamente(entradas, frame_imagens)
+    janela.mainloop()
+
+# Ponto de Entrada
+if __name__ == "__main__":
+    mostrar_tela_bem_vindo()
